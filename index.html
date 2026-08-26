@@ -3,6 +3,14 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- Google Analytics：仅匿名汇总访问和交互次数，不采集个人身份或业务明细。 -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-CQSEC5FNYG"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag("js", new Date());
+      gtag("config", "G-CQSEC5FNYG", { send_page_view: true });
+    </script>
     <meta name="color-scheme" content="light" />
     <meta name="description" content="销售中台月度复盘、周度复盘、无效低效、领星规则与批量投放运营看板" />
     <title>销售中台</title>
@@ -73,6 +81,6 @@
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
     <script src="assets/config.js?v=20260810-monthly-shared-filter-v15"></script>
-    <script src="assets/app.js?v=20260811-store-batch-v25" defer></script>
+    <script src="assets/app.js?v=20260826-lingxing-request-v32" defer></script>
   </body>
 </html>

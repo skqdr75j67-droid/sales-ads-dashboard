@@ -37,7 +37,6 @@ const PAGE_CONFIG = {
       ["trigger-monitor", "规则触发监控"],
       ["special-monitor", "专项规则视图"],
       ["saving-detail", "节费规则触发明细"],
-      ["rule-query", "领星自动化规则"],
     ],
   },
   batch_launch: {
@@ -60,6 +59,8 @@ const state = {
   page: "monthly_review",
   filterDraft: {},
   filterApplied: {},
+  // 默认“全部”是隐式状态；仅在用户实际勾选或点全选/清除后变为手动筛选。
+  filterManual: {},
   searchDraft: {},
   searchApplied: {},
   detailFilters: {},
@@ -96,10 +97,20 @@ const state = {
     reportOwnersApplied: new Set(),
     reportCategoriesDraft: new Set(),
     reportCategoriesApplied: new Set(),
+    reportFilterManual: { owner: false, category: false },
     invalidDetailTab: "all",
     batchSummaryTab: "category",
   },
 };
+
+// 仅记录匿名的看板使用行为，不发送运营姓名、品类或其他业务明细。
+function trackUsage(eventName, parameters = {}) {
+  if (typeof window.gtag !== "function") return;
+  window.gtag("event", eventName, {
+    dashboard_page: state.page || "unknown",
+    ...parameters,
+  });
+}
 
 const root = document.getElementById("page-root");
 const loading = document.getElementById("loading-state");
@@ -671,6 +682,8 @@ function syncReportFiltersFromShared(report) {
   state.ui.reportOwnersApplied = cloneSet(state.ui.reportOwnersDraft);
   state.ui.reportCategoriesDraft = sharedSelection(categories, "category");
   state.ui.reportCategoriesApplied = cloneSet(state.ui.reportCategoriesDraft);
+  state.ui.reportFilterManual.owner = !state.sharedFilters.owner.all;
+  state.ui.reportFilterManual.category = !state.sharedFilters.category.all;
 }
 
 function reportOwnerData(report) {
@@ -728,7 +741,7 @@ function reportCategoryBlock(category) {
     <div class="report-category-block__title"><strong>${escapeHtml(category.category)}</strong><span>${escapeHtml(category.status_label || category.group_label)}</span></div>
     ${reportTable(category.compare)}
     ${reportTable(category.period_data, "period")}
-    <div class="report-conclusion"><strong>分析结论</strong><p>${escapeHtml(reportConclusionText(category.conclusion) || "暂无分析结论")}</p></div>
+    <div class="report-conclusion"><strong>数据分析</strong><p>${escapeHtml(reportConclusionText(category.conclusion) || "暂无数据分析")}</p></div>
   </article>`;
 }
 
@@ -745,7 +758,7 @@ function reportCategorySection(report, group, id, title) {
   const categories = reportFilteredCategories(report, group);
   if (!categories.length) return "";
   return `<section class="dashboard-section report-section" id="${escapeHtml(id)}">
-    ${sectionHead(title, "保持 Excel 原有品类顺序和表格字段，不按网页重新排序。", `${categories.length} 个品类`)}
+    ${sectionHead(title, "", `${categories.length} 个品类`)}
     ${categories.map(reportCategoryBlock).join("")}
   </section>`;
 }
@@ -754,9 +767,16 @@ function reportBatchMonitorSection(report) {
   const monitor = report.batch_monitor;
   const tables = monitor?.tables || [monitor?.change, monitor?.rate, monitor?.period_data].filter((table) => table?.rows?.length);
   if (!tables.length) return "";
+  const groups = monitor?.groups || [];
+  const body = groups.length
+    ? groups.map((group) => `<article class="report-category-block report-batch-block">
+        <div class="report-category-block__title"><strong>${escapeHtml(group.title)}</strong></div>
+        ${(group.tables || []).map((table) => reportTable(table, "period")).join("")}
+      </article>`).join("")
+    : tables.map((table) => reportTable(table, "period")).join("");
   return `<section class="dashboard-section report-section" id="report-batch-monitor">
     ${sectionHead("批量广告异常监测", monitor.title || "批量广告异常清单。", `${tables.reduce((count, table) => count + table.rows.length, 0)} 条`)}
-    ${tables.map((table) => reportTable(table, "period")).join("")}
+    ${body}
   </section>`;
 }
 
@@ -826,6 +846,7 @@ function renderWeekly() {
       ${activeSelf.common ? `<div class="report-note"><strong>共性特征</strong><p>${escapeHtml(activeSelf.common)}</p></div>` : ""}
       ${activeSelf.abnormal ? `<div class="report-note is-warning"><strong>异常表现</strong><p>${escapeHtml(activeSelf.abnormal)}</p></div>` : ""}
       ${reportTable(activeSelf.table, "period")}
+      ${activeSelf.analysis ? `<div class="report-note"><strong>数据分析</strong><p>${escapeHtml(activeSelf.analysis)}</p></div>` : ""}
     </section>`;
   window.requestAnimationFrame(syncReportTableWidths);
 }
@@ -886,10 +907,12 @@ function initializeFilters(pageId, configs) {
   if (state.filterDraft[pageId]) return;
   state.filterDraft[pageId] = {};
   state.filterApplied[pageId] = {};
+  state.filterManual[pageId] = {};
   configs.forEach((config) => {
     const values = unique(config.options);
     state.filterDraft[pageId][config.id] = new Set(values);
     state.filterApplied[pageId][config.id] = new Set(values);
+    state.filterManual[pageId][config.id] = false;
   });
   applySharedFiltersToPage(pageId, configs);
   state.searchDraft[pageId] = "";
@@ -1805,6 +1828,7 @@ function invalidServiceStatusLabel(value) {
     CAMPAIGN_STATUS_ENABLED: "投放中",
     CAMPAIGN_OUT_OF_BUDGET: "预算耗尽",
     CAMPAIGN_STATUS_PAUSED: "已暂停",
+    CAMPAIGN_PAUSED: "已暂停",
     CAMPAIGN_STATUS_ARCHIVED: "已归档",
     CAMPAIGN_STATUS_DISABLED: "已关闭",
     CAMPAIGN_STATUS_CLOSED: "已关闭",
@@ -1907,6 +1931,10 @@ function downloadInvalidDetailCsv() {
   link.click();
   link.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  trackUsage("detail_download", {
+    download_type: "invalid_low_efficiency_csv",
+    result_count: rows.length,
+  });
   showToast(`已下载 ${formatNumber(rows.length, 0)} 条明细`);
 }
 
@@ -2244,7 +2272,7 @@ function renderLingxing() {
   })).join("");
 
   root.innerHTML = `
-    ${introMarkup("领星自动化规则复盘", "监控规则触发变化、专项规则动作和异常品类。", `${previousMonth} vs ${currentMonth}`, "主规则触发监控已排除来货自动重开和低库存产品暂停；两类动作在专项规则视图单独查看。")}
+    ${introMarkup("领星规则复盘", "监控规则触发变化、专项规则动作和异常品类。", `${previousMonth} vs ${currentMonth}`, "主规则触发监控已排除来货自动重开和低库存产品暂停；两类动作在专项规则视图单独查看。")}
     <div class="kpi-grid kpi-grid--five">${kpis}</div>
     ${filterMarkup("lingxing_rules", configs, null, `${triggerRows.length} 个监控组合`)}
     <section class="dashboard-section" id="trigger-monitor">
@@ -2328,20 +2356,7 @@ function renderLingxing() {
       ${tableMarkup("lingxing-detail-table", detailRows, detailColumns, 7)}
       <div class="method-note">花费、订单与销售额为当前筛选触发记录的取数窗口字段汇总，不等同整月广告表现。来货自动重开和低库存产品暂停已移至专项规则视图。</div>
     </section>
-    <section class="dashboard-section" id="rule-query">
-      ${sectionHead(
-        "领星自动化规则",
-        "查询当前已配置的领星自动化规则及通知信息。",
-        `${ruleQueryRows.length} 条`,
-        {
-          label: "新增/修改规则需求收集表",
-          href: "https://alidocs.dingtalk.com/i/nodes/YMyQA2dXW79wl46vhZMAP7aaJzlwrZgb?utm_scene=person_space&iframeQuery=viewId%3D1qX0QQ0%26sheetId%3Ddv19yqvsgs3oebp3pcjys",
-        },
-      )}
-      ${filterMarkup("lingxing_rule_query", ruleQueryConfigs, null, `${ruleQueryRows.length} 条规则`)}
-      ${tableMarkup("lingxing-rule-query-table", ruleQueryRows, ruleQueryColumns, 5)}
-      <div class="method-note">数据源：${escapeHtml(data.rule_query?.source || "未找到规则表")}；规则配置与规则触发记录为独立数据源，表内空白字段以横杠显示。</div>
-    </section>`;
+    `;
 }
 
 function batchFilterConfig(data) {
@@ -2695,19 +2710,19 @@ function renderSubnav() {
     if (report) sections = sections.filter(([id]) => id !== "report-batch-monitor" || Boolean(report.batch_monitor?.tables?.some((table) => table?.rows?.length)));
   }
   const sectionLinks = sections.map(([id, label], index) => {
-    const lingxingRuleRequestLink = state.page === "lingxing_rules" && id === "rule-query"
-      ? `<a class="subnav-action" href="https://alidocs.dingtalk.com/i/nodes/YMyQA2dXW79wl46vhZMAP7aaJzlwrZgb?utm_scene=person_space&amp;iframeQuery=viewId%3D1qX0QQ0%26sheetId%3Ddv19yqvsgs3oebp3pcjys" target="_blank" rel="noopener noreferrer">新增/修改规则需求收集表</a>`
-      : "";
     const sbsdRequestLink = state.page === "monthly_review" && id === "monthly-sbsd-share"
       ? `<a class="subnav-action" href="https://alidocs.dingtalk.com/notable/share/form/v01AJdl659bwZ8Q7Oke_GNZbE2w_i7B4JaT?source=link" target="_blank" rel="noopener noreferrer">SBSD投放需求</a>`
       : "";
     return `<a class="subnav-link ${index === 0 ? "is-active" : ""}" href="#${escapeHtml(id)}">${escapeHtml(label)}</a>
-      ${lingxingRuleRequestLink}${sbsdRequestLink}`;
+      ${sbsdRequestLink}`;
   }).join("");
   const batchApplicationLink = state.page === "batch_launch"
     ? `<a class="subnav-action" href="https://alidocs.dingtalk.com/notable/share/form/v01v9kqDejxQXkZ3OVx_tblZw1SF2hzdPvpj_vew40qPDRC?source=link" target="_blank" rel="noopener noreferrer">批量投放申请表</a>`
     : "";
-  subnav.innerHTML = sectionLinks + batchApplicationLink;
+  const lingxingRuleRequestLink = state.page === "lingxing_rules"
+    ? `<a class="subnav-action" href="https://alidocs.dingtalk.com/i/nodes/YMyQA2dXW79wl46vhZMAP7aaJzlwrZgb?utm_scene=person_space&amp;iframeQuery=viewId%3D1qX0QQ0%26sheetId%3Ddv19yqvsgs3oebp3pcjys" target="_blank" rel="noopener noreferrer">新增/修改规则需求收集表</a>`
+    : "";
+  subnav.innerHTML = sectionLinks + batchApplicationLink + lingxingRuleRequestLink;
 }
 
 function updateDataStatusForCurrentPage() {
@@ -2774,6 +2789,7 @@ function syncLinkedCategoryFilter(pageId, ownerFilterId) {
   const options = filterOptions(pageId, categoryConfig, true);
   const selected = new Set(options);
   state.filterDraft[pageId][categoryConfig.id] = selected;
+  state.filterManual[pageId][categoryConfig.id] = false;
 
   const panel = [...document.querySelectorAll("[data-page-filter]")]
     .find((element) => element.dataset.pageFilter === pageId);
@@ -2818,6 +2834,15 @@ function filterMultiSelectOptions(input) {
     const option = label.querySelector('input[type="checkbox"]')?.value || "";
     const isVisible = fuzzyOptionMatch(option, query);
     label.classList.toggle("is-option-hidden", !isVisible);
+    // 默认全选时，搜索结果以未勾选状态展示；搜索本身不改变实际筛选结果。
+    const pagePanel = select.closest("[data-page-filter]");
+    const pageId = pagePanel?.dataset.pageFilter;
+    const config = pageId && pageFilterConfigs(pageId).find((item) => item.id === select.dataset.filterId);
+    const options = config ? filterOptions(pageId, config, true) : [];
+    const selected = pageId ? state.filterDraft[pageId][select.dataset.filterId] : new Set();
+    const isDefaultAll = options.length > 0 && options.every((value) => selected.has(value));
+    if (pagePanel && query && isDefaultAll) label.querySelector('input[type="checkbox"]').checked = false;
+    if (pagePanel && !query && isDefaultAll) label.querySelector('input[type="checkbox"]').checked = true;
     if (isVisible) visibleCount += 1;
   });
   const count = select.querySelector(".multi-select__search-count");
@@ -2870,6 +2895,7 @@ function applyFilters(pageId) {
   closeMultiSelects();
   if (sectionId) renderCurrentPageAtSection(sectionId);
   else renderCurrentPage();
+  trackUsage("filter_apply", { filter_page: pageId });
   showToast("筛选已应用");
 }
 
@@ -2880,6 +2906,7 @@ function resetFilters(pageId) {
     const all = new Set(unique(config.options));
     state.filterDraft[pageId][config.id] = cloneSet(all);
     state.filterApplied[pageId][config.id] = cloneSet(all);
+    state.filterManual[pageId][config.id] = false;
   });
   if (SHARED_FILTER_PAGES.has(pageId)) {
     state.sharedFilters.owner = { all: true, values: new Set() };
@@ -2898,6 +2925,7 @@ function resetFilters(pageId) {
   Object.keys(state.pagination).forEach((key) => { state.pagination[key] = 1; });
   if (sectionId) renderCurrentPageAtSection(sectionId);
   else renderCurrentPage();
+  trackUsage("filter_reset", { filter_page: pageId });
   showToast("筛选已重置");
 }
 
@@ -2912,6 +2940,7 @@ function handleRootClick(event) {
     const selected = reportFilterAction.dataset.reportFilterAction === "all" ? new Set(options) : new Set();
     if (kind === "owner") state.ui.reportOwnersDraft = selected;
     else state.ui.reportCategoriesDraft = selected;
+    state.ui.reportFilterManual[kind] = true;
     state.sharedFilterDirty.add(kind);
     filter.querySelectorAll("[data-report-filter-option]").forEach((checkbox) => { checkbox.checked = selected.has(checkbox.value); });
     filter.querySelector(".report-category-filter__selection").innerHTML = reportSelectionMarkup(options, selected, kind === "owner" ? "未选择运营组长" : "未选择品类");
@@ -2925,6 +2954,7 @@ function handleRootClick(event) {
     if (state.sharedFilterDirty.has("owner")) updateSharedFilter("owner", state.ui.reportOwnersApplied, reportOwnerData(ensureReportSelection().report).owners);
     if (state.sharedFilterDirty.has("category")) updateSharedFilter("category", state.ui.reportCategoriesApplied, visibleReportCategories(ensureReportSelection().report).map((category) => category.category));
     renderCurrentPageAtSection("report-attention");
+    trackUsage("report_filter_apply", { filter_scope: "owner_category" });
     showToast(`已筛选 ${state.ui.reportOwnersApplied.size} 位运营组长、${state.ui.reportCategoriesApplied.size} 个品类`);
     return;
   }
@@ -2938,11 +2968,14 @@ function handleRootClick(event) {
     state.ui.reportOwnersApplied = cloneSet(owners);
     state.ui.reportCategoriesDraft = categories;
     state.ui.reportCategoriesApplied = cloneSet(categories);
+    state.ui.reportFilterManual.owner = false;
+    state.ui.reportFilterManual.category = false;
     state.sharedFilters.owner = { all: true, values: new Set() };
     state.sharedFilters.category = { all: true, values: new Set() };
     state.sharedFilterDirty.delete("owner");
     state.sharedFilterDirty.delete("category");
     renderCurrentPageAtSection("report-attention");
+    trackUsage("report_filter_reset", { filter_scope: "owner_category" });
     showToast("运营组长和品类筛选已重置");
     return;
   }
@@ -2979,9 +3012,16 @@ function handleRootClick(event) {
     } else {
       const pageId = select.closest("[data-page-filter]").dataset.pageFilter;
       const filterId = select.dataset.filterId;
-      values = hasOptionSearch ? cloneSet(state.filterDraft[pageId][filterId]) : new Set();
+      const config = pageFilterConfigs(pageId).find((item) => item.id === filterId);
+      const options = filterOptions(pageId, config, true);
+      const isManual = state.filterManual[pageId]?.[filterId];
+      // 默认全选时点“全选匹配”即开始新的手动选择；“清除匹配”则仅排除匹配项。
+      values = hasOptionSearch && !isManual && isAll
+        ? new Set()
+        : (hasOptionSearch ? (isManual ? cloneSet(state.filterDraft[pageId][filterId]) : new Set(options)) : new Set());
       targetCheckboxes.forEach((box) => isAll ? values.add(box.value) : values.delete(box.value));
       state.filterDraft[pageId][select.dataset.filterId] = values;
+      state.filterManual[pageId][filterId] = true;
       syncLinkedCategoryFilter(pageId, filterId);
       markSharedFilterDirty(pageId, filterId);
     }
@@ -3003,6 +3043,7 @@ function handleRootClick(event) {
     closeMultiSelects();
     if (sectionId) renderCurrentPageAtSection(sectionId);
     else renderCurrentPage();
+    trackUsage("detail_filter_apply", { detail_section: panel.dataset.detailFilter || "unknown" });
     showToast("明细筛选已应用");
     return;
   }
@@ -3070,6 +3111,7 @@ function handleRootClick(event) {
     Object.keys(state.pagination).forEach((key) => { state.pagination[key] = 1; });
     closeMultiSelects();
     renderCurrentPageAtSection("invalid-detail");
+    trackUsage("detail_filter_apply", { detail_section: "invalid_activity" });
     showToast("明细筛选已应用");
     return;
   }
@@ -3105,6 +3147,7 @@ function handleRootClick(event) {
     if (segment === "batch-summary") state.ui.batchSummaryTab = value;
     renderCurrentPage();
     document.getElementById(segment)?.scrollIntoView({ block: "start" });
+    trackUsage("section_switch", { section_name: segment });
     return;
   }
 
@@ -3116,6 +3159,7 @@ function handleRootClick(event) {
     state.pagination[id] = Math.max(1, (state.pagination[id] || 1) + delta);
     renderCurrentPage();
     document.querySelector(`[data-table-id="${CSS.escape(id)}"]`)?.scrollIntoView({ block: "center" });
+    trackUsage("table_pagination", { table_id: id, direction: pageButton.dataset.pageAction });
   }
 }
 
@@ -3135,20 +3179,29 @@ function handleRootChange(event) {
     if (name === "week") state.ui.reportWeek = reportSelect.value;
     state.ui.reportSelectionId = "";
     renderCurrentPage();
+    trackUsage("report_select", { selector_type: name });
     return;
   }
 
   const reportFilterOption = event.target.closest("[data-report-filter-option]");
   if (reportFilterOption) {
     const kind = reportFilterOption.dataset.reportFilterOption;
-    const selected = kind === "owner" ? state.ui.reportOwnersDraft : state.ui.reportCategoriesDraft;
+    let selected = kind === "owner" ? state.ui.reportOwnersDraft : state.ui.reportCategoriesDraft;
+    const filter = reportFilterOption.closest(".report-category-filter");
+    const isSearchActive = Boolean(filter?.querySelector("[data-report-filter-search]")?.value.trim());
+    const report = ensureReportSelection().report;
+    const options = kind === "owner" ? reportOwnerData(report).owners : visibleReportCategories(report).map((category) => category.category);
+    const isDefaultAll = options.length > 0 && options.every((value) => selected.has(value));
+    if (!state.ui.reportFilterManual[kind] || (isSearchActive && isDefaultAll)) {
+      selected = isSearchActive ? new Set() : cloneSet(selected);
+      if (kind === "owner") state.ui.reportOwnersDraft = selected;
+      else state.ui.reportCategoriesDraft = selected;
+      state.ui.reportFilterManual[kind] = true;
+    }
     if (reportFilterOption.checked) selected.add(reportFilterOption.value);
     else selected.delete(reportFilterOption.value);
     state.sharedFilterDirty.add(kind);
-    const filter = reportFilterOption.closest(".report-category-filter");
     const selection = filter?.querySelector(".report-category-filter__selection");
-    const report = ensureReportSelection().report;
-    const options = kind === "owner" ? reportOwnerData(report).owners : visibleReportCategories(report).map((category) => category.category);
     if (selection && report) selection.innerHTML = reportSelectionMarkup(options, selected, kind === "owner" ? "未选择运营组长" : "未选择品类");
     return;
   }
@@ -3166,7 +3219,16 @@ function handleRootChange(event) {
   }
   const pageId = select.closest("[data-page-filter]").dataset.pageFilter;
   const filterId = select.dataset.filterId;
-  const selected = state.filterDraft[pageId][filterId];
+  let selected = state.filterDraft[pageId][filterId];
+  const isSearchActive = Boolean(select.querySelector(".multi-select__search")?.value.trim());
+  const config = pageFilterConfigs(pageId).find((item) => item.id === filterId);
+  const options = filterOptions(pageId, config, true);
+  const isDefaultAll = options.length > 0 && options.every((value) => selected.has(value));
+  if (!state.filterManual[pageId]?.[filterId] || (isSearchActive && isDefaultAll)) {
+    selected = isSearchActive ? new Set() : cloneSet(selected);
+    state.filterDraft[pageId][filterId] = selected;
+    state.filterManual[pageId][filterId] = true;
+  }
   if (checkbox.checked) selected.add(checkbox.value);
   else selected.delete(checkbox.value);
   markSharedFilterDirty(pageId, filterId);
@@ -3177,8 +3239,19 @@ function handleRootChange(event) {
 function handleRootInput(event) {
   if (event.target.matches("[data-report-filter-search]")) {
     const keyword = event.target.value.trim().toLowerCase();
-    event.target.closest(".report-category-filter")?.querySelectorAll("[data-report-filter-row]").forEach((row) => {
+    const filter = event.target.closest(".report-category-filter");
+    const kind = filter?.dataset.reportFilterKind;
+    const options = kind === "owner"
+      ? reportOwnerData(ensureReportSelection().report).owners
+      : visibleReportCategories(ensureReportSelection().report).map((category) => category.category);
+    const selected = kind === "owner" ? state.ui.reportOwnersDraft : state.ui.reportCategoriesDraft;
+    const isDefaultAll = options.length > 0 && options.every((value) => selected.has(value));
+    filter?.querySelectorAll("[data-report-filter-row]").forEach((row) => {
       row.hidden = keyword && !row.textContent.toLowerCase().includes(keyword);
+      const checkbox = row.querySelector("[data-report-filter-option]");
+      if (checkbox && keyword && isDefaultAll) checkbox.checked = false;
+      if (checkbox && !keyword && isDefaultAll) checkbox.checked = true;
+      if (checkbox && !isDefaultAll) checkbox.checked = selected.has(checkbox.value);
     });
     return;
   }
@@ -3295,6 +3368,7 @@ document.querySelector(".primary-nav").addEventListener("click", (event) => {
   syncSharedFiltersToDestination(state.page);
   window.scrollTo({ top: 0, behavior: "smooth" });
   renderCurrentPage();
+  trackUsage("dashboard_navigation", { navigation_level: "primary" });
 });
 
 root.addEventListener("click", handleRootClick);
@@ -3304,10 +3378,20 @@ subnav.addEventListener("click", (event) => {
   const link = event.target.closest(".subnav-link");
   if (!link) return;
   setActiveSubnav(link.getAttribute("href").slice(1));
+  trackUsage("dashboard_navigation", {
+    navigation_level: "secondary",
+    section_id: link.getAttribute("href").slice(1),
+  });
   window.setTimeout(updateActiveSubnav, 50);
 });
 document.addEventListener("click", (event) => {
   if (!event.target.closest(".multi-select")) closeMultiSelects();
+  const externalLink = event.target.closest('a[target="_blank"]');
+  if (externalLink) {
+    trackUsage("external_link_open", {
+      link_label: (externalLink.textContent || "external_link").trim().slice(0, 60),
+    });
+  }
 });
 document.getElementById("retry-button").addEventListener("click", loadData);
 let reportTableResizeTimer;
