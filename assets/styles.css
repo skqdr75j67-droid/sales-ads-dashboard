@@ -27,12 +27,12 @@
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
-  .report-category-filter { grid-column: span 2; }
+.report-multi-filter-field { grid-column: span 2; }
 }
 
 @media (max-width: 720px) {
   .report-filter-bar { grid-template-columns: 1fr; }
-  .report-category-filter { grid-column: auto; }
+  .report-multi-filter-field { grid-column: auto; }
   .report-category-filter__panel { width: 100%; }
   .report-filter-actions .button { flex: 1; }
   .report-section { padding: 14px; }
@@ -871,8 +871,6 @@ button {
 
 .report-category-filter > summary::-webkit-details-marker { display: none; }
 .report-category-filter > summary::after { position: absolute; right: 12px; color: var(--ink-soft); content: "⌄"; }
-.report-category-filter__label { flex: 0 0 auto; color: var(--ink-soft); font-size: 12px; font-weight: 700; }
-
 .report-category-filter__selection {
   min-width: 0;
   display: flex;
@@ -903,9 +901,9 @@ button {
 .report-category-filter__panel {
   position: absolute;
   top: calc(100% + 6px);
-  right: 0;
   left: 0;
-  width: 320px;
+  width: max(100%, 230px);
+  max-width: 320px;
   z-index: 20;
   padding: 10px;
   border: 1px solid var(--line-strong);

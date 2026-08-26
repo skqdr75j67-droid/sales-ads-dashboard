@@ -724,16 +724,19 @@ function reportMultiFilter(report, kind) {
   const applied = isOwner ? state.ui.reportOwnersApplied : state.ui.reportCategoriesApplied;
   const draft = isOwner ? state.ui.reportOwnersDraft : state.ui.reportCategoriesDraft;
   const label = isOwner ? "运营组长" : "品类";
-  return `<details class="report-category-filter" data-report-filter-kind="${kind}">
-    <summary><span class="report-category-filter__label">${label}</span><span class="report-category-filter__selection">${reportSelectionMarkup(options, applied, `未选择${label}`)}</span></summary>
-    <div class="report-category-filter__panel">
-      <input type="search" placeholder="搜索${label}" data-report-filter-search />
-      <div class="report-category-filter__tools"><button type="button" data-report-filter-action="all">全选</button><button type="button" data-report-filter-action="clear">清除</button></div>
-      <div class="report-category-filter__options">
-        ${options.map((option) => `<label data-report-filter-row><input type="checkbox" value="${escapeHtml(option)}" data-report-filter-option="${kind}" ${draft.has(option) ? "checked" : ""} /><span>${escapeHtml(option)}</span></label>`).join("")}
+  return `<div class="report-filter-field report-multi-filter-field">
+    <span>${label}</span>
+    <details class="report-category-filter" data-report-filter-kind="${kind}">
+      <summary><span class="report-category-filter__selection">${reportSelectionMarkup(options, applied, `未选择${label}`)}</span></summary>
+      <div class="report-category-filter__panel">
+        <input type="search" placeholder="搜索${label}" data-report-filter-search />
+        <div class="report-category-filter__tools"><button type="button" data-report-filter-action="all">全选</button><button type="button" data-report-filter-action="clear">清除</button></div>
+        <div class="report-category-filter__options">
+          ${options.map((option) => `<label data-report-filter-row><input type="checkbox" value="${escapeHtml(option)}" data-report-filter-option="${kind}" ${draft.has(option) ? "checked" : ""} /><span>${escapeHtml(option)}</span></label>`).join("")}
+        </div>
       </div>
-    </div>
-  </details>`;
+    </details>
+  </div>`;
 }
 
 function reportCategoryBlock(category) {
@@ -3384,6 +3387,10 @@ subnav.addEventListener("click", (event) => {
 });
 document.addEventListener("click", (event) => {
   if (!event.target.closest(".multi-select")) closeMultiSelects();
+  const activeReportFilter = event.target.closest(".report-category-filter");
+  document.querySelectorAll(".report-category-filter[open]").forEach((filter) => {
+    if (filter !== activeReportFilter) filter.removeAttribute("open");
+  });
   const externalLink = event.target.closest('a[target="_blank"]');
   if (externalLink) {
     trackUsage("external_link_open", {
