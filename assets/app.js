@@ -472,6 +472,13 @@ function weeklyGeneratedLabel(value) {
   });
 }
 
+function generatedTimestampLabel(value) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (!date || Number.isNaN(date.valueOf())) return "数据已就绪";
+  const pad = (number) => String(number).padStart(2, "0");
+  return `${date.getFullYear()}/${pad(date.getMonth() + 1)}/${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
 function reportFormatValue(header, value) {
   if (value === null || value === undefined || value === "") return "-";
   const label = String(header || "");
@@ -2741,9 +2748,7 @@ function updateDataStatusForCurrentPage() {
     .map((value) => new Date(value))
     .filter((value) => !Number.isNaN(value.valueOf()));
   const generated = generatedCandidates.sort((a, b) => b.valueOf() - a.valueOf())[0] || null;
-  const freshness = generated && !Number.isNaN(generated.valueOf())
-    ? `${generated.toLocaleDateString("zh-CN")} ${generated.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}`
-    : "数据已就绪";
+  const freshness = generatedTimestampLabel(generated);
   dataStatus.className = "data-status is-ready";
   dataStatus.innerHTML = `<span class="status-dot"></span><span>${escapeHtml(freshness)}</span>`;
 }
