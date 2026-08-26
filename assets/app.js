@@ -462,21 +462,14 @@ function weeklySelfRows(section, period) {
 
 function weeklyGeneratedLabel(value) {
   const generated = value ? new Date(value) : null;
-  if (!generated || Number.isNaN(generated.valueOf())) return "生成时间未知";
-  return generated.toLocaleString("zh-CN", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return generatedTimestampLabel(generated, "生成时间未知");
 }
 
-function generatedTimestampLabel(value) {
+function generatedTimestampLabel(value, fallback = "数据已就绪") {
   const date = value instanceof Date ? value : new Date(value);
-  if (!date || Number.isNaN(date.valueOf())) return "数据已就绪";
+  if (!date || Number.isNaN(date.valueOf())) return fallback;
   const pad = (number) => String(number).padStart(2, "0");
-  return `${date.getFullYear()}/${pad(date.getMonth() + 1)}/${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  return `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
 function reportFormatValue(header, value) {
