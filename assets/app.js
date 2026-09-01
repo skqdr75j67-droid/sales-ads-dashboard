@@ -89,7 +89,7 @@ const state = {
   ui: {
     monthlyCategoryTab: "all",
     weeklySelfTab: "overall",
-    reportType: "monthly",
+    reportType: "",
     reportMonth: "",
     reportWeek: "",
     reportSelectionId: "",
@@ -609,11 +609,31 @@ function reportOptions(reports, key, labelKey) {
   }).map((report) => [report[key], report[labelKey]]);
 }
 
+function reportRecencyKey(report) {
+  const monthMatch = String(report?.month_key || "").match(/^(\d{4})-(\d{1,2})$/);
+  const yearMonth = monthMatch ? Number(monthMatch[1]) * 100 + Number(monthMatch[2]) : 0;
+  const typePriority = report?.report_type === "weekly" ? 1 : 0;
+  const weekMatch = String(report?.week_label || "").match(/(\d+)/);
+  const weekNumber = weekMatch ? Number(weekMatch[1]) : 0;
+  return [yearMonth, typePriority, weekNumber];
+}
+
+function compareReportsByRecency(left, right) {
+  const leftKey = reportRecencyKey(left);
+  const rightKey = reportRecencyKey(right);
+  for (let index = 0; index < leftKey.length; index += 1) {
+    if (leftKey[index] !== rightKey[index]) return rightKey[index] - leftKey[index];
+  }
+  return String(right?.id || "").localeCompare(String(left?.id || ""));
+}
+
 function ensureReportSelection() {
-  const reports = Array.isArray(state.weeklyReport?.reports) ? state.weeklyReport.reports : [];
+  const reports = Array.isArray(state.weeklyReport?.reports)
+    ? [...state.weeklyReport.reports].sort(compareReportsByRecency)
+    : [];
   const availableTypes = new Set(reports.map((report) => report.report_type));
   if (!availableTypes.has(state.ui.reportType)) {
-    state.ui.reportType = availableTypes.has("monthly") ? "monthly" : reports[0]?.report_type || "";
+    state.ui.reportType = reports[0]?.report_type || "";
   }
   const typeReports = reports.filter((report) => report.report_type === state.ui.reportType);
   const months = reportOptions(typeReports, "month_key", "month_label");
