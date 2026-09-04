@@ -10,7 +10,6 @@ const PAGE_CONFIG = {
       ["monthly-overview", "整体大盘"],
       ["monthly-category", "品类视角"],
       ["monthly-owner", "运营组长视角"],
-      ["monthly-sbsd-share", "SBSD广告活动占比分析"],
     ],
   },
   weekly_review: {
@@ -36,7 +35,7 @@ const PAGE_CONFIG = {
     sections: [
       ["trigger-monitor", "规则触发监控"],
       ["special-monitor", "专项规则视图"],
-      ["saving-detail", "节费规则触发明细"],
+      ["rule-action-detail", "规则动作明细"],
     ],
   },
   batch_launch: {
@@ -609,28 +608,8 @@ function reportOptions(reports, key, labelKey) {
   }).map((report) => [report[key], report[labelKey]]);
 }
 
-function reportRecencyKey(report) {
-  const monthMatch = String(report?.month_key || "").match(/^(\d{4})-(\d{1,2})$/);
-  const yearMonth = monthMatch ? Number(monthMatch[1]) * 100 + Number(monthMatch[2]) : 0;
-  const typePriority = report?.report_type === "weekly" ? 1 : 0;
-  const weekMatch = String(report?.week_label || "").match(/(\d+)/);
-  const weekNumber = weekMatch ? Number(weekMatch[1]) : 0;
-  return [yearMonth, typePriority, weekNumber];
-}
-
-function compareReportsByRecency(left, right) {
-  const leftKey = reportRecencyKey(left);
-  const rightKey = reportRecencyKey(right);
-  for (let index = 0; index < leftKey.length; index += 1) {
-    if (leftKey[index] !== rightKey[index]) return rightKey[index] - leftKey[index];
-  }
-  return String(right?.id || "").localeCompare(String(left?.id || ""));
-}
-
 function ensureReportSelection() {
-  const reports = Array.isArray(state.weeklyReport?.reports)
-    ? [...state.weeklyReport.reports].sort(compareReportsByRecency)
-    : [];
+  const reports = Array.isArray(state.weeklyReport?.reports) ? state.weeklyReport.reports : [];
   const availableTypes = new Set(reports.map((report) => report.report_type));
   if (!availableTypes.has(state.ui.reportType)) {
     state.ui.reportType = reports[0]?.report_type || "";
@@ -1644,6 +1623,9 @@ function monthlyCategoryRows(model) {
 
 function renderMonthly() {
   const data = state.data.monthly_review;
+  const previousMonthLabel = data.period?.previous_month || "上月";
+  const currentMonthLabel = data.period?.current_month || "本月";
+  const comparisonLabel = data.period?.comparison_label || `${previousMonthLabel} vs ${currentMonthLabel}`;
   const configs = monthlyFilterConfig(data);
   initializeFilters("monthly_review", configs);
   const model = monthlyDataModel(data, configs);
@@ -1726,48 +1708,36 @@ function renderMonthly() {
   const categoryColumns = [
     { field: "品类", label: "品类" },
     { field: "运营组长", label: "运营组长" },
-    { field: "上月花费", label: "6月花费", numeric: true, render: (v) => formatCurrency(v) },
-    { field: "本月花费", label: "7月花费", numeric: true, render: (v) => formatCurrency(v) },
-    { field: "上月销售额", label: "6月销售额", numeric: true, render: (v) => formatCurrency(v) },
-    { field: "本月销售额", label: "7月销售额", numeric: true, render: (v) => formatCurrency(v) },
-    { field: "上月订单量", label: "6月订单", numeric: true, render: (v) => formatNumber(v, 0) },
-    { field: "本月订单量", label: "7月订单", numeric: true, render: (v) => formatNumber(v, 0) },
-    { field: "上月ACOS", label: "6月 ACoS", numeric: true, render: (v) => formatPercent(v) },
-    { field: "本月ACOS", label: "7月 ACoS", numeric: true, render: (v) => formatPercent(v) },
+    { field: "上月花费", label: `${previousMonthLabel}花费`, numeric: true, render: (v) => formatCurrency(v) },
+    { field: "本月花费", label: `${currentMonthLabel}花费`, numeric: true, render: (v) => formatCurrency(v) },
+    { field: "上月销售额", label: `${previousMonthLabel}销售额`, numeric: true, render: (v) => formatCurrency(v) },
+    { field: "本月销售额", label: `${currentMonthLabel}销售额`, numeric: true, render: (v) => formatCurrency(v) },
+    { field: "上月订单量", label: `${previousMonthLabel}订单`, numeric: true, render: (v) => formatNumber(v, 0) },
+    { field: "本月订单量", label: `${currentMonthLabel}订单`, numeric: true, render: (v) => formatNumber(v, 0) },
+    { field: "上月ACOS", label: `${previousMonthLabel} ACoS`, numeric: true, render: (v) => formatPercent(v) },
+    { field: "本月ACOS", label: `${currentMonthLabel} ACoS`, numeric: true, render: (v) => formatPercent(v) },
   ];
   const ownerColumns = [
     { field: "运营组长", label: "运营组长" },
-    { field: "本月花费", label: "7月花费", numeric: true, render: (v) => formatCurrency(v) },
-    { field: "本月销售额", label: "7月销售额", numeric: true, render: (v) => formatCurrency(v) },
-    { field: "本月订单量", label: "7月订单", numeric: true, render: (v) => formatNumber(v, 0) },
-    { field: "本月ACOS", label: "7月 ACoS", numeric: true, render: (v) => formatPercent(v) },
+    { field: "本月花费", label: `${currentMonthLabel}花费`, numeric: true, render: (v) => formatCurrency(v) },
+    { field: "本月销售额", label: `${currentMonthLabel}销售额`, numeric: true, render: (v) => formatCurrency(v) },
+    { field: "本月订单量", label: `${currentMonthLabel}订单`, numeric: true, render: (v) => formatNumber(v, 0) },
+    { field: "本月ACOS", label: `${currentMonthLabel} ACoS`, numeric: true, render: (v) => formatPercent(v) },
     { field: "花费环比", label: "花费环比", numeric: true, render: (v) => v === null ? "新增" : formatSignedFractionPercent(v) },
   ];
-  const sbsdData = data.sbsd_share_analysis || { q3_allocation: { rows: [] }, july_spend: { rows: [] } };
-  const q3Rows = sbsdData.q3_allocation?.rows || [];
-  const julySpendRows = sbsdData.july_spend?.rows || [];
-  const sbsdJulyColumns = [
-    { field: "品类", label: "品类" },
-    { field: "求和:花费", label: "花费", numeric: true, render: (v) => formatCurrency(v) },
-    { field: "求和:广告销售额", label: "广告销售额", numeric: true, render: (v) => formatCurrency(v) },
-    { field: "求和:广告订单", label: "广告订单", numeric: true, render: (v) => formatNumber(v, 0) },
-    { field: "平均值:CVR", label: "CVR", numeric: true, render: (v) => formatPercent(v) },
-    { field: "平均值:ACoS", label: "ACoS", numeric: true, render: (v) => formatPercent(v) },
-  ];
-
   root.innerHTML = `
-    ${introMarkup("月度广告数据复盘", "整体规模、效率变化及品类与运营组长表现，用于月度经营复盘。", "2026年6月 vs 7月")}
+    ${introMarkup("月度广告数据复盘", "整体规模、效率变化及品类与运营组长表现，用于月度经营复盘。", comparisonLabel)}
     <div class="kpi-grid">${kpis}</div>
     ${filterMarkup("monthly_review", configs, null, `${model.currentRows.length} 个品类`) }
     <section class="dashboard-section" id="monthly-overview">
-      ${sectionHead("整体大盘", "规模与效率指标分别比较，避免不同单位混在同一坐标中。", "6月 vs 7月")}
+      ${sectionHead("整体大盘", "规模与效率指标分别比较，避免不同单位混在同一坐标中。", comparisonLabel)}
       <div class="chart-grid">
         <div class="chart-panel">
-          <div class="chart-title-row"><div><h4>规模指标对比</h4><p>花费、销售、订单、点击与曝光</p></div>${legendMarkup("6月", "7月")}</div>
+          <div class="chart-title-row"><div><h4>规模指标对比</h4><p>花费、销售、订单、点击与曝光</p></div>${legendMarkup(previousMonthLabel, currentMonthLabel)}</div>
           ${hasData ? compareList(volumeRows) : emptyState()}
         </div>
         <div class="chart-panel">
-          <div class="chart-title-row"><div><h4>效率指标对比</h4><p>CTR、CVR、ACoS、CPC 与 CPA</p></div>${legendMarkup("6月", "7月")}</div>
+          <div class="chart-title-row"><div><h4>效率指标对比</h4><p>CTR、CVR、ACoS、CPC 与 CPA</p></div>${legendMarkup(previousMonthLabel, currentMonthLabel)}</div>
           ${hasData ? compareList(efficiencyRows) : emptyState()}
         </div>
       </div>
@@ -1786,13 +1756,13 @@ function renderMonthly() {
       ${sectionHead("运营组长视角", "按运营组长汇总负责品类的花费、销售、订单与 ACoS。", `${ownerRows.length} 位运营组长`)}
       <div class="chart-grid">
         <div class="chart-panel">
-          <div class="chart-title-row"><div><h4>广告花费对比</h4></div>${legendMarkup("6月", "7月")}</div>
+          <div class="chart-title-row"><div><h4>广告花费对比</h4></div>${legendMarkup(previousMonthLabel, currentMonthLabel)}</div>
           ${verticalCompareChart(ownerRows.map((row) => ({ label: row.运营组长, previous: row.上月花费, current: row.本月花费 })), { formatter: (v) => formatCurrency(v, true) })}
         </div>
         <div class="chart-panel">
           <div class="chart-title-row"><div><h4>ACoS 数值对比</h4><p>直接比较两个月数值及百分点变化</p></div></div>
           ${numericComparisonTable(ownerRows.map((row) => ({ label: row.运营组长, previous: row.上月ACOS, current: row.本月ACOS })), {
-            valueLabels: ["6月", "7月", "变化"],
+            valueLabels: [previousMonthLabel, currentMonthLabel, "变化"],
             formatter: (v) => formatPercent(v),
             differenceFormatter: formatSignedPercentPoints,
             differenceTone: "higher-is-bad",
@@ -1802,33 +1772,7 @@ function renderMonthly() {
       <div style="height:14px"></div>
       ${tableMarkup("monthly-owner-table", ownerRows, ownerColumns, 30)}
     </section>
-    <section class="dashboard-section" id="monthly-sbsd-share">
-      ${sectionHead("SBSD广告活动占比分析", "查看Q3预算分配策略与7月SDSB广告花费结构。左侧保留源表数据，右侧展示对应花费占比。", "数据源：SD广告花费占比分析.xlsx")}
-      <div class="sbsd-analysis-grid">
-        <div class="chart-panel">
-          <div class="chart-title-row"><div><h4>${escapeHtml(sbsdData.q3_allocation?.title || "SDSB的Q3预算分配策略")}</h4><p>按源表左侧数据保留品类与预估预算分配</p></div></div>
-          ${tableMarkup("sbsd-q3-table", q3Rows, [
-            { field: "品类", label: "市占排名降序（25年全年测算）" },
-            { field: "预估预算分配", label: "预估预算分配", numeric: true, render: (v) => formatPercent(v, true) },
-          ], 30)}
-          ${sbsdData.q3_allocation?.note ? `<div class="method-note">${escapeHtml(sbsdData.q3_allocation.note)}</div>` : ""}
-        </div>
-        <div class="chart-panel">
-          <div class="chart-title-row"><div><h4>Q3预算分配占比</h4><p>沿用源表饼图，包含品类与占比标注</p></div></div>
-          <img class="sbsd-source-chart" src="assets/sbsd-q3-allocation.png" alt="Q3预算分配占比饼图，包含品类与占比标注">
-        </div>
-      </div>
-      <div class="sbsd-analysis-grid">
-        <div class="chart-panel">
-          <div class="chart-title-row"><div><h4>${escapeHtml(sbsdData.july_spend?.title || "7月月度花费占比")}</h4><p>展示源表第1—17行 A—F列区域（含总计）</p></div></div>
-          ${tableMarkup("sbsd-july-table", julySpendRows, sbsdJulyColumns, 20)}
-        </div>
-        <div class="chart-panel">
-          <div class="chart-title-row"><div><h4>7月SDSB花费占比</h4><p>沿用源表饼图，包含品类与占比标注</p></div></div>
-          <img class="sbsd-source-chart" src="assets/sbsd-july-spend.png" alt="7月SDSB花费占比饼图，包含品类与占比标注">
-        </div>
-      </div>
-    </section>`;
+    `;
 }
 
 function invalidFilterConfig(data) {
@@ -2295,7 +2239,7 @@ function renderLingxing() {
   })).join("");
 
   root.innerHTML = `
-    ${introMarkup("领星规则复盘", "监控规则触发变化、专项规则动作和异常品类。", `${previousMonth} vs ${currentMonth}`, "主规则触发监控已排除来货自动重开和低库存产品暂停；两类动作在专项规则视图单独查看。")}
+    ${introMarkup("领星规则复盘", "监控规则触发变化、专项规则动作和异常品类。", `${previousMonth} vs ${currentMonth}`, "主规则触发监控已排除来货自动重开、低库存产品暂停和低曝光/点击普遍加价；前两类动作在专项规则视图单独查看")}
     <div class="kpi-grid kpi-grid--five">${kpis}</div>
     ${filterMarkup("lingxing_rules", configs, null, `${triggerRows.length} 个监控组合`)}
     <section class="dashboard-section" id="trigger-monitor">
@@ -2327,7 +2271,7 @@ function renderLingxing() {
       </div>
     </section>
     <section class="dashboard-section" id="special-monitor">
-      ${sectionHead("专项规则视图", "来货自动重开和低库存产品暂停单独统计，只展示规则触发次数与动作明细，不计算理论节费。", `${specialRows.length} 个监控组合`)}
+      ${sectionHead("专项规则视图", "来货自动重开和低库存产品暂停单独统计，展示规则触发次数与动作明细。", `${specialRows.length} 个监控组合`)}
       ${filterMarkup("lingxing_special", specialConfigs, null, `${specialRows.length} 个监控组合`)}
       <div class="chart-grid">
         <div class="chart-panel">
@@ -2363,11 +2307,11 @@ function renderLingxing() {
           ], 10)}
       </div>
     </section>
-    <section class="dashboard-section" id="saving-detail">
-      ${sectionHead("节费规则触发明细", "保留产品(ASIN)暂停、关键词/PAT暂停和否词触发记录；不含来货自动重开，不计算理论节费。", `${detailRows.length} 条`)}
+    <section class="dashboard-section" id="rule-action-detail">
+      ${sectionHead("规则动作明细", "展示产品(ASIN)暂停、关键词/PAT暂停和否词触发记录；来货自动重开在专项规则视图中单独展示。", `${detailRows.length} 条`)}
       ${detailFilterMarkup("lingxing_rules_detail", {
         options: ["关键词/PAT暂停", "产品(ASIN)暂停", "否词"],
-        searchLabel: "节费明细关键词",
+        searchLabel: "动作明细关键词",
         placeholder: "搜索广告活动名称或标签关键词",
       })}
       <div class="detail-summary-grid">
@@ -2530,8 +2474,8 @@ function renderBatch() {
   const eligibleCrossRows = crossRows.filter((row) => eligibleCategoryMonths.has(`${row.月份}::${row.品类}`));
   const categoryRows = batchRowsByDimension(eligibleCrossRows, "品类", { combineMonths: true, periodLabel });
   const teamRows = batchRowsByDimension(
-    batchSummaryRowsToRaw((data.summary_by_team || []).filter((row) => monthSet.has(String(row.月份)))),
-    "维度",
+    eligibleCrossRows,
+    "团队",
     { combineMonths: true, periodLabel },
   ).filter((row) => row.批量广告花费 > 0);
   const ownerRows = batchRowsByDimension(eligibleCrossRows, "品类负责人", { combineMonths: true, periodLabel }).filter((row) => row.批量广告花费 > 0);
@@ -2732,13 +2676,9 @@ function renderSubnav() {
     if (report) sections = sections.filter(([id]) => !groupBySection[id] || reportFilteredCategories(report, groupBySection[id]).length > 0);
     if (report) sections = sections.filter(([id]) => id !== "report-batch-monitor" || Boolean(report.batch_monitor?.tables?.some((table) => table?.rows?.length)));
   }
-  const sectionLinks = sections.map(([id, label], index) => {
-    const sbsdRequestLink = state.page === "monthly_review" && id === "monthly-sbsd-share"
-      ? `<a class="subnav-action" href="https://alidocs.dingtalk.com/notable/share/form/v01AJdl659bwZ8Q7Oke_GNZbE2w_i7B4JaT?source=link" target="_blank" rel="noopener noreferrer">SBSD投放需求</a>`
-      : "";
-    return `<a class="subnav-link ${index === 0 ? "is-active" : ""}" href="#${escapeHtml(id)}">${escapeHtml(label)}</a>
-      ${sbsdRequestLink}`;
-  }).join("");
+  const sectionLinks = sections.map(([id, label], index) =>
+    `<a class="subnav-link ${index === 0 ? "is-active" : ""}" href="#${escapeHtml(id)}">${escapeHtml(label)}</a>`
+  ).join("");
   const batchApplicationLink = state.page === "batch_launch"
     ? `<a class="subnav-action" href="https://alidocs.dingtalk.com/notable/share/form/v01v9kqDejxQXkZ3OVx_tblZw1SF2hzdPvpj_vew40qPDRC?source=link" target="_blank" rel="noopener noreferrer">批量投放申请表</a>`
     : "";
@@ -2759,7 +2699,9 @@ function updateDataStatusForCurrentPage() {
     dataStatus.innerHTML = `<span class="status-dot"></span><span>${escapeHtml(weeklyGeneratedLabel(state.weeklyReport.meta?.generated_at))}</span>`;
     return;
   }
-  const generatedCandidates = [state.data?.meta?.generated_at, state.weeklyReport?.meta?.generated_at]
+  // The non-weekly pages use the unified data bundle.  Do not let a separately
+  // generated weekly report make the batch/invalid pages look stale or newer.
+  const generatedCandidates = [state.data?.meta?.generated_at]
     .filter(Boolean)
     .map((value) => new Date(value))
     .filter((value) => !Number.isNaN(value.valueOf()));
