@@ -1905,8 +1905,14 @@ function downloadInvalidDetailCsv() {
   showToast(`已下载 ${formatNumber(rows.length, 0)} 条明细`);
 }
 
+function invalidReportMonthLabel(data) {
+  const match = String(data?.source || "").match(/(20\d{2})(\d{2})/);
+  return match ? `${match[1]}年${Number(match[2])}月` : "当前月份";
+}
+
 function renderInvalid() {
   const data = state.data.invalid_low_efficiency;
+  const reportMonthLabel = invalidReportMonthLabel(data);
   const configs = invalidFilterConfig(data);
   initializeFilters("invalid_low_efficiency", configs);
   const invalidRows = filterInvalidDetail(data.invalid_details || []);
@@ -1958,7 +1964,7 @@ function renderInvalid() {
   ];
 
   root.innerHTML = `
-    ${introMarkup("无效低效广告复盘", "数据窗口：近30天（排除近两天），且广告活动创建满60天；无效：有效状态=enabled 且 花费≥0 且 订单=0；低效：有效状态=enabled 且 ACoS≥60%。", "2026年7月")}
+    ${introMarkup("无效低效广告复盘", "数据窗口：近30天（排除近两天），且广告活动创建满60天；无效：有效状态=enabled 且 花费≥0 且 订单=0；低效：有效状态=enabled 且 ACoS≥60%。", reportMonthLabel)}
     <div class="kpi-grid kpi-grid--six">
       ${kpiCard({ label: "无效广告活动", value: invalidRows.length, valueType: "integer", tone: "red", note: `花费 ${formatCurrency(invalidSpend)}` })}
       ${kpiCard({ label: "低效广告活动", value: inefficientRows.length, valueType: "integer", tone: "orange", note: `花费 ${formatCurrency(inefficientSpend)}` })}
@@ -1969,7 +1975,7 @@ function renderInvalid() {
     </div>
     ${filterMarkup("invalid_low_efficiency", configs, null, `${invalidRows.length + inefficientRows.length} 条活动`)}
     <section class="dashboard-section" id="invalid-analysis">
-      ${sectionHead("无效广告分析", "7月有花费无销售额的广告活动", `${invalidRows.length} 条`)}
+      ${sectionHead("无效广告分析", `${reportMonthLabel}有花费无销售额的广告活动`, `${invalidRows.length} 条`)}
       <div class="chart-grid">
         <div class="chart-panel">
           <div class="chart-title-row"><div><h4>无效花费 Top 品类</h4></div></div>
@@ -1982,7 +1988,7 @@ function renderInvalid() {
       </div>
     </section>
     <section class="dashboard-section" id="inefficient-analysis">
-      ${sectionHead("低效广告分析", "7月有订单且ACoS偏高的广告活动", `${inefficientRows.length} 条`)}
+      ${sectionHead("低效广告分析", `${reportMonthLabel}有订单且ACoS偏高的广告活动`, `${inefficientRows.length} 条`)}
       <div class="chart-grid">
         <div class="chart-panel">
           <div class="chart-title-row"><div><h4>低效花费 Top 品类</h4></div></div>
@@ -1995,7 +2001,7 @@ function renderInvalid() {
       </div>
     </section>
     <section class="dashboard-section" id="saving-analysis">
-      ${sectionHead("节约花费视角", "6月已关停广告活动的理论已节约花费", `${filteredSavingsCategory.length} 个品类`)}
+      ${sectionHead("节约花费视角", `${reportMonthLabel}已关停广告活动的理论已节约花费`, `${filteredSavingsCategory.length} 个品类`)}
       <div class="chart-grid">
         <div class="chart-panel">
           <div class="chart-title-row"><div><h4>节约花费 Top 品类</h4></div></div>
@@ -2420,6 +2426,25 @@ function formatBatchMonthLabel(value) {
     : month;
 }
 
+function batchComparisonLabel(months) {
+  if (!months.length) return "当前筛选";
+  const parsed = months.map((value) => String(value));
+  const first = parsed[0];
+  const last = parsed.at(-1);
+  if (/^\d{6}$/.test(first) && /^\d{6}$/.test(last)) {
+    const firstYear = first.slice(0, 4);
+    const lastYear = last.slice(0, 4);
+    const firstLabel = `${Number(first.slice(4, 6))}月`;
+    const lastLabel = `${Number(last.slice(4, 6))}月`;
+    return first === last
+      ? `${firstYear}年${firstLabel}`
+      : firstYear === lastYear
+        ? `${firstYear}年${firstLabel} vs ${lastLabel}`
+        : `${firstYear}年${firstLabel} vs ${lastYear}年${lastLabel}`;
+  }
+  return parsed.join(" vs ");
+}
+
 function batchRowsByDimension(rows, dimensionField, options = {}) {
   const grouped = new Map();
   rows.forEach((row) => {
@@ -2458,6 +2483,7 @@ function renderBatch() {
   const ownerSet = selectedSet("batch_launch", "owner");
   const selectedMonths = [...monthSet].sort((a, b) => Number(a) - Number(b));
   const periodLabel = selectedMonths.join("+");
+  const comparisonLabel = batchComparisonLabel(selectedMonths);
   const categoryAllSelected = isAllSelected("batch_launch", configs.find((config) => config.id === "category"));
   const crossRows = (data.summary_cross || []).filter((row) => monthSet.has(String(row.月份))
     && (categoryAllSelected || categorySet.has(row.品类))
@@ -2587,7 +2613,7 @@ function renderBatch() {
   summaryRows = [...summaryRows].sort((a, b) => b.批量活动数量 - a.批量活动数量);
 
   root.innerHTML = `
-    ${introMarkup("批量投放系统运营看板", "查看批量活动创建规模、活动覆盖率及批量 ACoS 与品类平均的差异。", "2026年6月 vs 7月")}
+    ${introMarkup("批量投放系统运营看板", "查看批量活动创建规模、活动覆盖率及批量 ACoS 与品类平均的差异。", comparisonLabel)}
     <div class="kpi-grid">
       ${kpiCard({ label: "批量广告活动数量", value: current.batchCount, previous: previous?.batchCount, valueType: "integer", tone: "primary", note: latestMonth ? `${String(latestMonth).slice(0, 4)}年${String(latestMonth).slice(4)}月` : "当前筛选" })}
       ${kpiCard({ label: "活动覆盖率", value: current.coverage, previous: previous?.coverage, valueType: "fractionPercent", tone: "teal", note: "批量活动数 / 全部活动数" })}
