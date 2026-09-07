@@ -9,7 +9,8 @@
       window.dataLayer = window.dataLayer || [];
       function gtag(){dataLayer.push(arguments);}
       gtag("js", new Date());
-      gtag("config", "G-CQSEC5FNYG", { send_page_view: true });
+      // 单页看板的页面浏览由 app.js 按实际主页面单独上报，避免只记成首页。
+      gtag("config", "G-CQSEC5FNYG", { send_page_view: false });
     </script>
     <meta name="color-scheme" content="light" />
     <meta name="description" content="销售中台月度复盘、周度复盘、无效低效、领星规则与批量投放运营看板" />
@@ -81,6 +82,6 @@
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
     <script src="assets/config.js?v=20260810-monthly-shared-filter-v15"></script>
-    <script src="assets/app.js?v=20260907-sbsd-august-v39" defer></script>
+    <script src="assets/app.js?v=20260907-ga4-usage-v40" defer></script>
   </body>
 </html>

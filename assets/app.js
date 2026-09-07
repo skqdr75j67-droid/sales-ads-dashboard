@@ -103,13 +103,254 @@ const state = {
   },
 };
 
-// 仅记录匿名的看板使用行为，不发送运营姓名、品类或其他业务明细。
+// 仅记录匿名的看板使用行为，不发送运营姓名、品类、搜索词或其他业务明细。
+// page_title / page_location / content_group 使用 GA4 内置维度；自定义字段用于实时排查和后续探索分析。
+const USAGE_MIN_DURATION_MS = 1000;
+const usageTracking = {
+  pageId: "",
+  sectionId: "",
+  pageActiveStartedAt: null,
+  sectionActiveStartedAt: null,
+  sessionActiveMs: 0,
+  interactionCount: 0,
+  pagesViewed: new Set(),
+  sectionsViewed: new Set(),
+  sessionSummarySent: false,
+  sectionViewTimer: null,
+};
+
+function analyticsPageName(pageId = state.page) {
+  return PAGE_CONFIG[pageId]?.title || "未知页面";
+}
+
+function analyticsSectionName(sectionId, pageId = state.page) {
+  return PAGE_CONFIG[pageId]?.sections.find(([id]) => id === sectionId)?.[1] || "未知模块";
+}
+
+function currentAnalyticsSectionId() {
+  const active = subnav?.querySelector(".subnav-link.is-active")?.getAttribute("href") || "";
+  return active.startsWith("#") ? active.slice(1) : (usageTracking.sectionId || "");
+}
+
+function analyticsPageLocation(pageId) {
+  const virtualUrl = new URL(window.location.href);
+  virtualUrl.searchParams.delete("v");
+  virtualUrl.searchParams.set("dashboard_page", pageId);
+  virtualUrl.hash = "";
+  return virtualUrl.toString();
+}
+
 function trackUsage(eventName, parameters = {}) {
   if (typeof window.gtag !== "function") return;
-  window.gtag("event", eventName, {
-    dashboard_page: state.page || "unknown",
+  const pageId = String(parameters.dashboard_page || state.page || "unknown");
+  const sectionId = String(parameters.dashboard_section || currentAnalyticsSectionId() || "");
+  const pageName = analyticsPageName(pageId);
+  const sectionName = sectionId ? analyticsSectionName(sectionId, pageId) : "";
+  const eventParameters = {
+    dashboard_page: pageId,
+    dashboard_page_name: pageName,
+    page_title: `${pageName}｜销售中台`,
+    page_location: analyticsPageLocation(pageId),
+    content_group: sectionName ? `${pageName}/${sectionName}` : pageName,
+    ...(sectionId ? {
+      dashboard_section: sectionId,
+      dashboard_section_name: sectionName,
+    } : {}),
     ...parameters,
+  };
+  Object.keys(eventParameters).forEach((key) => {
+    if (eventParameters[key] === undefined || eventParameters[key] === null || eventParameters[key] === "") {
+      delete eventParameters[key];
+    }
   });
+  window.gtag("event", eventName, eventParameters);
+}
+
+function trackDashboardPageView(viewSource) {
+  const pageId = state.page;
+  const pageName = analyticsPageName(pageId);
+  const pageLocation = analyticsPageLocation(pageId);
+  trackUsage("page_view", {
+    dashboard_page: pageId,
+    page_title: `${pageName}｜销售中台`,
+    page_location: pageLocation,
+    page_path: `${window.location.pathname}?dashboard_page=${encodeURIComponent(pageId)}`,
+  });
+  trackUsage("dashboard_page_view", {
+    dashboard_page: pageId,
+    view_source: viewSource,
+  });
+}
+
+function durationSeconds(durationMs) {
+  return Math.round(durationMs / 100) / 10;
+}
+
+function flushSectionUsage(reason, useBeacon = false) {
+  if (usageTracking.sectionActiveStartedAt === null || !usageTracking.sectionId) return;
+  const durationMs = Math.max(0, performance.now() - usageTracking.sectionActiveStartedAt);
+  usageTracking.sectionActiveStartedAt = null;
+  if (durationMs < USAGE_MIN_DURATION_MS) return;
+  trackUsage("dashboard_section_time", {
+    dashboard_page: usageTracking.pageId || state.page,
+    dashboard_section: usageTracking.sectionId,
+    duration_seconds: durationSeconds(durationMs),
+    engagement_time_msec: Math.round(durationMs),
+    exit_reason: reason,
+    ...(useBeacon ? { transport_type: "beacon" } : {}),
+  });
+}
+
+function flushPageUsage(reason, useBeacon = false) {
+  if (usageTracking.pageActiveStartedAt === null || !usageTracking.pageId) return;
+  const durationMs = Math.max(0, performance.now() - usageTracking.pageActiveStartedAt);
+  usageTracking.pageActiveStartedAt = null;
+  usageTracking.sessionActiveMs += durationMs;
+  if (durationMs < USAGE_MIN_DURATION_MS) return;
+  trackUsage("dashboard_page_time", {
+    dashboard_page: usageTracking.pageId,
+    dashboard_section: usageTracking.sectionId,
+    duration_seconds: durationSeconds(durationMs),
+    engagement_time_msec: Math.round(durationMs),
+    exit_reason: reason,
+    ...(useBeacon ? { transport_type: "beacon" } : {}),
+  });
+}
+
+function flushUsageDurations(reason, useBeacon = false) {
+  flushSectionUsage(reason, useBeacon);
+  flushPageUsage(reason, useBeacon);
+}
+
+function startPageUsage(pageId) {
+  window.clearTimeout(usageTracking.sectionViewTimer);
+  usageTracking.sectionViewTimer = null;
+  usageTracking.pageId = pageId;
+  usageTracking.sectionId = "";
+  usageTracking.pagesViewed.add(pageId);
+  const isVisible = document.visibilityState === "visible";
+  usageTracking.pageActiveStartedAt = isVisible ? performance.now() : null;
+  usageTracking.sectionActiveStartedAt = null;
+}
+
+function activateTrackedSection(sectionId, source) {
+  if (!sectionId || sectionId === usageTracking.sectionId) return;
+  flushSectionUsage("section_change");
+  usageTracking.sectionId = sectionId;
+  usageTracking.sectionsViewed.add(`${usageTracking.pageId || state.page}:${sectionId}`);
+  usageTracking.sectionActiveStartedAt = document.visibilityState === "visible" ? performance.now() : null;
+  trackUsage("dashboard_section_view", {
+    dashboard_page: usageTracking.pageId || state.page,
+    dashboard_section: sectionId,
+    view_source: source,
+  });
+}
+
+function switchTrackedSection(sectionId, source = "scroll") {
+  window.clearTimeout(usageTracking.sectionViewTimer);
+  usageTracking.sectionViewTimer = null;
+  if (!sectionId || sectionId === usageTracking.sectionId) return;
+  if (source === "scroll") {
+    usageTracking.sectionViewTimer = window.setTimeout(() => {
+      usageTracking.sectionViewTimer = null;
+      activateTrackedSection(sectionId, "scroll_stable");
+    }, 450);
+    return;
+  }
+  activateTrackedSection(sectionId, source);
+}
+
+function resumeUsageClocks() {
+  const now = performance.now();
+  if (usageTracking.pageId && usageTracking.pageActiveStartedAt === null) usageTracking.pageActiveStartedAt = now;
+  if (usageTracking.sectionId && usageTracking.sectionActiveStartedAt === null) usageTracking.sectionActiveStartedAt = now;
+}
+
+function trackSessionSummary(reason) {
+  if (usageTracking.sessionSummarySent) return;
+  usageTracking.sessionSummarySent = true;
+  trackUsage("dashboard_session_summary", {
+    session_active_seconds: durationSeconds(usageTracking.sessionActiveMs),
+    pages_viewed: usageTracking.pagesViewed.size,
+    sections_viewed: usageTracking.sectionsViewed.size,
+    interaction_count: usageTracking.interactionCount,
+    effective_use: (
+      usageTracking.sessionActiveMs >= 120000
+      || usageTracking.pagesViewed.size >= 3
+      || usageTracking.interactionCount >= 2
+    ) ? 1 : 0,
+    exit_reason: reason,
+    transport_type: "beacon",
+  });
+}
+
+function analyticsExternalLinkName(link) {
+  if (link.classList.contains("header-feedback-link")) return "dashboard_feedback";
+  if (link.classList.contains("subnav-action") && state.page === "batch_launch") return "batch_application";
+  if (link.classList.contains("subnav-action") && state.page === "lingxing_rules") return "rule_request";
+  if (link.classList.contains("section-action")) return "section_action";
+  return "external_link";
+}
+
+function dashboardClickDescriptor(target) {
+  const element = target.closest([
+    ".nav-button",
+    ".subnav-link",
+    ".subnav-action",
+    ".section-action",
+    ".header-feedback-link",
+    ".multi-select__button",
+    "[data-select-action]",
+    "[data-filter-query]",
+    "[data-filter-reset]",
+    "[data-search-clear]",
+    "[data-report-category-apply]",
+    "[data-report-category-reset]",
+    "[data-detail-query]",
+    "[data-detail-search-clear]",
+    "[data-invalid-detail-query]",
+    "[data-invalid-detail-clear]",
+    "[data-invalid-detail-download]",
+    "[data-segment-value]",
+    "[data-page-action]",
+  ].join(","));
+  if (!element) return null;
+  const sectionId = element.closest(".dashboard-section")?.id || currentAnalyticsSectionId();
+  if (element.matches(".nav-button")) return { interaction_type: "primary_navigation", interaction_name: element.dataset.page };
+  if (element.matches(".subnav-link")) return {
+    interaction_type: "secondary_navigation",
+    interaction_name: element.getAttribute("href")?.replace(/^#/, "") || "section",
+    dashboard_section: element.getAttribute("href")?.replace(/^#/, "") || sectionId,
+  };
+  if (element.matches(".subnav-action,.section-action,.header-feedback-link")) return {
+    interaction_type: "external_link",
+    interaction_name: analyticsExternalLinkName(element),
+    dashboard_section: sectionId,
+  };
+  if (element.matches(".multi-select__button")) return { interaction_type: "filter_open", interaction_name: "multi_select", dashboard_section: sectionId };
+  if (element.matches("[data-select-action]")) return { interaction_type: "filter_option_action", interaction_name: element.dataset.selectAction || "select_action", dashboard_section: sectionId };
+  if (element.matches("[data-filter-query],[data-report-category-apply],[data-detail-query],[data-invalid-detail-query]")) return { interaction_type: "filter", interaction_name: "apply", dashboard_section: sectionId };
+  if (element.matches("[data-filter-reset],[data-report-category-reset]")) return { interaction_type: "filter", interaction_name: "reset", dashboard_section: sectionId };
+  if (element.matches("[data-search-clear],[data-detail-search-clear],[data-invalid-detail-clear]")) return { interaction_type: "filter", interaction_name: "clear", dashboard_section: sectionId };
+  if (element.matches("[data-invalid-detail-download]")) return { interaction_type: "download", interaction_name: "invalid_low_efficiency_csv", dashboard_section: sectionId };
+  if (element.matches("[data-segment-value]")) return {
+    interaction_type: "segment_switch",
+    interaction_name: `${element.closest("[data-segment]")?.dataset.segment || "segment"}:${element.dataset.segmentValue || "option"}`,
+    dashboard_section: sectionId,
+  };
+  if (element.matches("[data-page-action]")) return {
+    interaction_type: "table_pagination",
+    interaction_name: `${element.closest("[data-table-id]")?.dataset.tableId || "table"}:${element.dataset.pageAction || "page"}`,
+    dashboard_section: sectionId,
+  };
+  return null;
+}
+
+function trackDashboardClick(event) {
+  const descriptor = dashboardClickDescriptor(event.target);
+  if (!descriptor) return;
+  usageTracking.interactionCount += 1;
+  trackUsage("dashboard_click", descriptor);
 }
 
 const root = document.getElementById("page-root");
@@ -2784,7 +3025,7 @@ function renderCurrentPageAtSection(sectionId) {
   const section = document.getElementById(sectionId);
   if (!section) return;
   section.scrollIntoView({ block: "start" });
-  setActiveSubnav(sectionId);
+  setActiveSubnav(sectionId, "rerender");
 }
 
 function pageFilterConfigs(pageId) {
@@ -2970,7 +3211,11 @@ function handleRootClick(event) {
     if (state.sharedFilterDirty.has("owner")) updateSharedFilter("owner", state.ui.reportOwnersApplied, reportOwnerData(ensureReportSelection().report).owners);
     if (state.sharedFilterDirty.has("category")) updateSharedFilter("category", state.ui.reportCategoriesApplied, visibleReportCategories(ensureReportSelection().report).map((category) => category.category));
     renderCurrentPageAtSection("report-attention");
-    trackUsage("report_filter_apply", { filter_scope: "owner_category" });
+    trackUsage("report_filter_apply", {
+      filter_scope: "owner_category",
+      owner_count: state.ui.reportOwnersApplied.size,
+      category_count: state.ui.reportCategoriesApplied.size,
+    });
     showToast(`已筛选 ${state.ui.reportOwnersApplied.size} 位运营组长、${state.ui.reportCategoriesApplied.size} 个品类`);
     return;
   }
@@ -3163,7 +3408,10 @@ function handleRootClick(event) {
     if (segment === "batch-summary") state.ui.batchSummaryTab = value;
     renderCurrentPage();
     document.getElementById(segment)?.scrollIntoView({ block: "start" });
-    trackUsage("section_switch", { section_name: segment });
+    trackUsage("section_switch", {
+      section_name: segment,
+      selected_option: value,
+    });
     return;
   }
 
@@ -3175,7 +3423,11 @@ function handleRootClick(event) {
     state.pagination[id] = Math.max(1, (state.pagination[id] || 1) + delta);
     renderCurrentPage();
     document.querySelector(`[data-table-id="${CSS.escape(id)}"]`)?.scrollIntoView({ block: "center" });
-    trackUsage("table_pagination", { table_id: id, direction: pageButton.dataset.pageAction });
+    trackUsage("table_pagination", {
+      table_id: id,
+      direction: pageButton.dataset.pageAction,
+      page_number: state.pagination[id],
+    });
   }
 }
 
@@ -3195,7 +3447,13 @@ function handleRootChange(event) {
     if (name === "week") state.ui.reportWeek = reportSelect.value;
     state.ui.reportSelectionId = "";
     renderCurrentPage();
-    trackUsage("report_select", { selector_type: name });
+    const selectedReport = ensureReportSelection().report;
+    trackUsage("report_select", {
+      selector_type: name,
+      selected_option: reportSelect.value,
+      report_id: selectedReport?.id || "unknown",
+      report_type: selectedReport?.report_type || state.ui.reportType || "unknown",
+    });
     return;
   }
 
@@ -3307,10 +3565,11 @@ function handleRootInput(event) {
 
 let sectionScrollHandler;
 
-function setActiveSubnav(targetId) {
+function setActiveSubnav(targetId, source = "scroll") {
   subnav.querySelectorAll(".subnav-link").forEach((link) => {
     link.classList.toggle("is-active", link.getAttribute("href") === `#${targetId}`);
   });
+  switchTrackedSection(targetId, source);
 }
 
 function updateActiveSubnav() {
@@ -3324,7 +3583,7 @@ function updateActiveSubnav() {
   });
   const pageBottom = window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 4;
   if (pageBottom) active = targets[targets.length - 1];
-  setActiveSubnav(active.id);
+  setActiveSubnav(active.id, "scroll");
 }
 
 function bindSectionObserver() {
@@ -3343,6 +3602,7 @@ function bindSectionObserver() {
 }
 
 async function loadData() {
+  const loadStartedAt = performance.now();
   loading.classList.remove("is-hidden");
   errorState.classList.add("is-hidden");
   root.innerHTML = "";
@@ -3367,24 +3627,44 @@ async function loadData() {
     state.weeklyReport = weeklyResult.data;
     state.weeklyLoadError = weeklyResult.error;
     loading.classList.add("is-hidden");
+    if (!usageTracking.pageId) startPageUsage(state.page);
     renderCurrentPage();
+    trackDashboardPageView("initial_load");
+    trackUsage("dashboard_data_load", {
+      load_status: "success",
+      load_time_ms: Math.round(performance.now() - loadStartedAt),
+      weekly_load_status: weeklyResult.error ? "failed" : "success",
+    });
   } catch (error) {
     loading.classList.add("is-hidden");
     errorState.classList.remove("is-hidden");
     document.getElementById("error-message").textContent = `无法读取 ${DATA_URL}。请通过 GitHub Pages 或本地 HTTP 服务打开页面。${error.message ? ` (${error.message})` : ""}`;
     dataStatus.classList.add("is-error");
     dataStatus.innerHTML = '<span class="status-dot"></span><span>数据加载失败</span>';
+    trackUsage("dashboard_data_load", {
+      load_status: "failed",
+      load_time_ms: Math.round(performance.now() - loadStartedAt),
+    });
   }
 }
 
 document.querySelector(".primary-nav").addEventListener("click", (event) => {
   const button = event.target.closest("[data-page]");
   if (!button || button.dataset.page === state.page || !state.data) return;
-  state.page = button.dataset.page;
+  const previousPage = state.page;
+  const nextPage = button.dataset.page;
+  flushUsageDurations("page_change");
+  state.page = nextPage;
+  startPageUsage(nextPage);
   syncSharedFiltersToDestination(state.page);
-  window.scrollTo({ top: 0, behavior: "smooth" });
+  window.scrollTo({ top: 0, behavior: "auto" });
   renderCurrentPage();
-  trackUsage("dashboard_navigation", { navigation_level: "primary" });
+  trackUsage("dashboard_navigation", {
+    navigation_level: "primary",
+    from_page: previousPage,
+    to_page: nextPage,
+  });
+  trackDashboardPageView("primary_navigation");
 });
 
 root.addEventListener("click", handleRootClick);
@@ -3393,14 +3673,19 @@ root.addEventListener("input", handleRootInput);
 subnav.addEventListener("click", (event) => {
   const link = event.target.closest(".subnav-link");
   if (!link) return;
-  setActiveSubnav(link.getAttribute("href").slice(1));
+  const fromSection = usageTracking.sectionId;
+  const targetSection = link.getAttribute("href").slice(1);
+  setActiveSubnav(targetSection, "secondary_navigation");
   trackUsage("dashboard_navigation", {
     navigation_level: "secondary",
-    section_id: link.getAttribute("href").slice(1),
+    from_section: fromSection,
+    to_section: targetSection,
+    dashboard_section: targetSection,
   });
   window.setTimeout(updateActiveSubnav, 50);
 });
 document.addEventListener("click", (event) => {
+  trackDashboardClick(event);
   if (!event.target.closest(".multi-select")) closeMultiSelects();
   const activeReportFilter = event.target.closest(".report-category-filter");
   document.querySelectorAll(".report-category-filter[open]").forEach((filter) => {
@@ -3409,7 +3694,7 @@ document.addEventListener("click", (event) => {
   const externalLink = event.target.closest('a[target="_blank"]');
   if (externalLink) {
     trackUsage("external_link_open", {
-      link_label: (externalLink.textContent || "external_link").trim().slice(0, 60),
+      link_name: analyticsExternalLinkName(externalLink),
     });
   }
 });
@@ -3419,5 +3704,22 @@ window.addEventListener("resize", () => {
   window.clearTimeout(reportTableResizeTimer);
   reportTableResizeTimer = window.setTimeout(syncReportTableWidths, 80);
 }, { passive: true });
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") flushUsageDurations("tab_hidden", true);
+  else resumeUsageClocks();
+});
+
+window.addEventListener("pagehide", () => {
+  flushUsageDurations("page_exit", true);
+  trackSessionSummary("page_exit");
+});
+
+window.addEventListener("pageshow", (event) => {
+  if (!event.persisted) return;
+  usageTracking.sessionSummarySent = false;
+  resumeUsageClocks();
+  trackDashboardPageView("back_forward_cache");
+});
 
 loadData();
