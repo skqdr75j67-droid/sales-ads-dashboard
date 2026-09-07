@@ -10,6 +10,7 @@ const PAGE_CONFIG = {
       ["monthly-overview", "整体大盘"],
       ["monthly-category", "品类视角"],
       ["monthly-owner", "运营组长视角"],
+      ["monthly-sbsd-share", "SB/SD花费占比"],
     ],
   },
   weekly_review: {
@@ -1626,6 +1627,8 @@ function renderMonthly() {
   const previousMonthLabel = data.period?.previous_month || "上月";
   const currentMonthLabel = data.period?.current_month || "本月";
   const comparisonLabel = data.period?.comparison_label || `${previousMonthLabel} vs ${currentMonthLabel}`;
+  const sbsdData = data.sbsd_share_analysis || {};
+  const sbsdSpendRows = sbsdData.monthly_spend?.rows || [];
   const configs = monthlyFilterConfig(data);
   initializeFilters("monthly_review", configs);
   const model = monthlyDataModel(data, configs);
@@ -1725,6 +1728,15 @@ function renderMonthly() {
     { field: "本月ACOS", label: `${currentMonthLabel} ACoS`, numeric: true, render: (v) => formatPercent(v) },
     { field: "花费环比", label: "花费环比", numeric: true, render: (v) => v === null ? "新增" : formatSignedFractionPercent(v) },
   ];
+  const sbsdSpendColumns = [
+    { field: "品类", label: "品类" },
+    { field: "求和:花费", label: "花费", numeric: true, render: (v) => formatCurrency(v) },
+    { field: "求和:点击", label: "点击", numeric: true, render: (v) => formatNumber(v, 0) },
+    { field: "求和:曝光量", label: "曝光量", numeric: true, render: (v) => formatNumber(v, 0) },
+    { field: "求和:广告订单", label: "广告订单", numeric: true, render: (v) => formatNumber(v, 0) },
+    { field: "求和:广告销售额", label: "广告销售额", numeric: true, render: (v) => formatCurrency(v) },
+    { field: "ACOS", label: "ACOS", numeric: true, render: (v) => formatPercent(v, true) },
+  ];
   root.innerHTML = `
     ${introMarkup("月度广告数据复盘", "整体规模、效率变化及品类与运营组长表现，用于月度经营复盘。", comparisonLabel)}
     <div class="kpi-grid">${kpis}</div>
@@ -1771,6 +1783,21 @@ function renderMonthly() {
       </div>
       <div style="height:14px"></div>
       ${tableMarkup("monthly-owner-table", ownerRows, ownerColumns, 30)}
+    </section>
+    <section class="dashboard-section" id="monthly-sbsd-share">
+      ${sectionHead("8月 SB/SD 广告花费占比分析", "左侧展示“8月SDSB花费情况”汇总表，右侧展示同一工作表的花费占比截图。", "数据源：SD广告花费占比分析.xlsx")}
+      <div class="sbsd-analysis-grid sbsd-analysis-grid--monthly">
+        <div class="chart-panel">
+          <div class="chart-title-row"><div><h4>${escapeHtml(sbsdData.monthly_spend?.title || "8月SDSB花费情况")}</h4><p>源表 A1:G21，包含总计</p></div></div>
+          ${tableMarkup("sbsd-august-table", sbsdSpendRows, sbsdSpendColumns, 30)}
+        </div>
+        <div class="chart-panel sbsd-chart-panel">
+          <div class="chart-title-row"><div><h4>8月SDSB花费占比</h4><p>沿用源表图表截图，包含品类与占比标注</p></div></div>
+          <div class="sbsd-chart-frame">
+            <img class="sbsd-source-chart" src="assets/sbsd-august-spend.png" alt="8月SDSB花费占比饼图，包含品类与占比标注">
+          </div>
+        </div>
+      </div>
     </section>
     `;
 }

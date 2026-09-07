@@ -1601,10 +1601,26 @@ button {
 .sbsd-source-chart {
   display: block;
   width: 100%;
-  max-width: 580px;
+  max-width: 720px;
   height: auto;
   margin: 0 auto;
-  background: #fff;
+  border-radius: 6px;
+  mix-blend-mode: multiply;
+}
+
+.sbsd-chart-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.sbsd-chart-frame {
+  display: flex;
+  flex: 1;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 8px;
+  border-radius: 7px;
+  background: var(--surface-muted);
 }
 
 .chart-title-row {
@@ -1653,6 +1669,21 @@ button {
 #sbsd-july-table .data-table th:not(:first-child),
 #sbsd-july-table .data-table td:not(:first-child) {
   width: 16.6%;
+}
+
+#sbsd-august-table .data-table th:first-child,
+#sbsd-august-table .data-table td:first-child {
+  width: 16%;
+}
+
+#sbsd-august-table .data-table th:not(:first-child),
+#sbsd-august-table .data-table td:not(:first-child) {
+  width: 14%;
+}
+
+#sbsd-august-table .data-table tbody tr:last-child {
+  font-weight: 700;
+  background: #e8eefc;
 }
 
 .chart-title-row p {
@@ -2636,6 +2667,11 @@ button {
 
 @media (max-width: 480px) {
   .sbsd-analysis-grid { grid-template-columns: 1fr; }
+  .sbsd-analysis-grid--monthly .table-scroll { overflow-x: auto; }
+  #sbsd-august-table .data-table {
+    min-width: 820px;
+    table-layout: auto;
+  }
   .detail-search { grid-template-columns: 1fr 1fr; }
   .detail-search .filter-field { grid-column: 1 / -1; }
   .detail-filter-bar { grid-template-columns: 1fr 1fr; }
