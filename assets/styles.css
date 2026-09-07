@@ -1594,6 +1594,10 @@ button {
   margin-bottom: 14px;
 }
 
+.sbsd-analysis-grid--monthly {
+  grid-template-columns: minmax(0, 1.05fr) minmax(520px, 1fr);
+}
+
 .sbsd-analysis-grid:last-child {
   margin-bottom: 0;
 }
@@ -1606,6 +1610,10 @@ button {
   margin: 0 auto;
   border-radius: 6px;
   mix-blend-mode: multiply;
+}
+
+.sbsd-analysis-grid--monthly .sbsd-source-chart {
+  max-width: 900px;
 }
 
 .sbsd-chart-panel {
