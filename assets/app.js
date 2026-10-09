@@ -1680,15 +1680,15 @@ function tagMarkup(value) {
   return `<span class="tag ${className}">${escapeHtml(text)}</span>`;
 }
 
-function tableMarkup(id, rows, columns, pageSize = 50, rowClass = null) {
-  if (!rows.length) return `<div class="table-shell">${emptyState()}</div>`;
+function tableMarkup(id, rows, columns, pageSize = 50, rowClass = null, footerRows = []) {
+  if (!rows.length && !footerRows.length) return `<div class="table-shell">${emptyState()}</div>`;
   const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
   const currentPage = Math.min(state.pagination[id] || 1, totalPages);
   state.pagination[id] = currentPage;
   const start = (currentPage - 1) * pageSize;
   const pageRows = rows.slice(start, start + pageSize);
   const head = columns.map((column) => `<th class="${column.numeric ? "cell-number" : ""}">${escapeHtml(column.label)}</th>`).join("");
-  const body = pageRows.map((row) => `<tr${rowClass ? ` class="${escapeHtml(rowClass(row))}"` : ""}>${columns.map((column) => {
+  const renderRow = (row) => `<tr${rowClass ? ` class="${escapeHtml(rowClass(row))}"` : ""}>${columns.map((column) => {
     let content;
     if (column.render) content = column.render(row[column.field], row);
     else content = escapeHtml(row[column.field] ?? "-");
@@ -1698,13 +1698,16 @@ function tableMarkup(id, rows, columns, pageSize = 50, rowClass = null) {
       column.wrap ? "cell-wrap" : "",
     ].filter(Boolean).join(" ");
     return `<td class="${classes}">${content}</td>`;
-  }).join("")}</tr>`).join("");
+  }).join("")}</tr>`;
+  const body = pageRows.map(renderRow).join("");
+  const foot = footerRows.length ? `<tfoot>${footerRows.map(renderRow).join("")}</tfoot>` : "";
   return `
     <div class="table-shell" data-table-id="${escapeHtml(id)}">
       <div class="table-scroll">
         <table class="data-table">
           <thead><tr>${head}</tr></thead>
           <tbody>${body}</tbody>
+          ${foot}
         </table>
       </div>
       <div class="table-footer">
@@ -1866,6 +1869,7 @@ function renderMonthly() {
     ? "assets/sbsd-september-spend-2026.png?v=20261009-refresh"
     : "";
   const sbsdCategoryRows = sbsdSpendRows.filter((row) => !["总计", "总和"].includes(row.品类));
+  const sbsdTotalRows = sbsdSpendRows.filter((row) => ["总计", "总和"].includes(row.品类));
   const sbsdTotalSpend = sum(sbsdCategoryRows, "求和:花费");
   const configs = monthlyFilterConfig(data);
   initializeFilters("monthly_review", configs);
@@ -2027,7 +2031,7 @@ function renderMonthly() {
       <div class="sbsd-analysis-grid sbsd-analysis-grid--monthly">
         <div class="chart-panel">
           <div class="chart-title-row"><div><h4>${escapeHtml(sbsdData.monthly_spend?.title || `${sbsdMonthLabel}SDSB花费情况`)}</h4><p>${sbsdCategoryRows.length} 个品类，包含总计；花费 ${formatCurrency(sbsdTotalSpend)}</p></div></div>
-          ${tableMarkup("sbsd-monthly-table", sbsdSpendRows, sbsdSpendColumns, 12, (row) => ["总计", "总和"].includes(row.品类) ? "sbsd-total-row" : "")}
+          ${tableMarkup("sbsd-monthly-table", sbsdCategoryRows, sbsdSpendColumns, 12, (row) => ["总计", "总和"].includes(row.品类) ? "sbsd-total-row" : "", sbsdTotalRows)}
         </div>
         <div class="chart-panel sbsd-chart-panel${sbsdChartImage ? " sbsd-chart-panel--image" : ""}">
           <div class="chart-title-row">
