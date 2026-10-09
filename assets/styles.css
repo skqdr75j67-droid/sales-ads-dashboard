@@ -1621,6 +1621,75 @@ button {
   flex-direction: column;
 }
 
+.sbsd-chart-panel--image {
+  align-self: start;
+  padding: 20px;
+  background: #fff;
+  border-color: #e1e7f0;
+  border-radius: 12px;
+  box-shadow: 0 4px 18px rgba(29, 49, 80, 0.04);
+}
+
+.sbsd-chart-panel--image .chart-title-row {
+  gap: 12px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.sbsd-image-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 11px;
+  border: 1px solid #dee6f4;
+  border-radius: 7px;
+  color: var(--primary);
+  background: #f5f8ff;
+  text-decoration: none;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.sbsd-image-link:hover {
+  background: #eaf0ff;
+}
+
+.sbsd-source-figure {
+  margin: 0;
+}
+
+.sbsd-source-image-link {
+  display: block;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.sbsd-chart-panel--image .sbsd-source-chart {
+  max-width: none;
+  height: auto;
+  mix-blend-mode: normal;
+}
+
+.sbsd-source-figure figcaption {
+  margin-top: 14px;
+  color: var(--ink-soft);
+  font-size: 12px;
+  line-height: 1.6;
+  text-align: center;
+}
+
+.sbsd-source-image-link:focus-visible,
+.sbsd-image-link:focus-visible {
+  outline: 3px solid #8ca9ff;
+  outline-offset: 3px;
+}
+
+@media (max-width: 1100px) {
+  .sbsd-analysis-grid--monthly { grid-template-columns: 1fr; }
+  .sbsd-chart-panel--image { max-width: 100%; }
+}
+
 .sbsd-chart-frame {
   display: flex;
   flex: 1;
@@ -1680,16 +1749,21 @@ button {
 }
 
 #sbsd-august-table .data-table th:first-child,
-#sbsd-august-table .data-table td:first-child {
+#sbsd-august-table .data-table td:first-child,
+[data-table-id="sbsd-monthly-table"] .data-table th:first-child,
+[data-table-id="sbsd-monthly-table"] .data-table td:first-child {
   width: 16%;
 }
 
 #sbsd-august-table .data-table th:not(:first-child),
-#sbsd-august-table .data-table td:not(:first-child) {
+#sbsd-august-table .data-table td:not(:first-child),
+[data-table-id="sbsd-monthly-table"] .data-table th:not(:first-child),
+[data-table-id="sbsd-monthly-table"] .data-table td:not(:first-child) {
   width: 14%;
 }
 
-#sbsd-august-table .data-table tbody tr:last-child {
+#sbsd-august-table .data-table tbody tr:last-child,
+[data-table-id="sbsd-monthly-table"] .data-table tbody tr:last-child {
   font-weight: 700;
   background: #e8eefc;
 }
@@ -2676,7 +2750,8 @@ button {
 @media (max-width: 480px) {
   .sbsd-analysis-grid { grid-template-columns: 1fr; }
   .sbsd-analysis-grid--monthly .table-scroll { overflow-x: auto; }
-  #sbsd-august-table .data-table {
+  #sbsd-august-table .data-table,
+  [data-table-id="sbsd-monthly-table"] .data-table {
     min-width: 820px;
     table-layout: auto;
   }
@@ -2703,6 +2778,7 @@ button {
   .filter-panel,
   .dashboard-section { padding: 14px; }
   .chart-panel { padding: 12px; }
+  .sbsd-chart-panel--image { padding: 14px; }
   .hbar-row { grid-template-columns: minmax(84px, 110px) minmax(0, 1fr) 52px; }
   .chart-axis--hbar { grid-template-columns: minmax(84px, 110px) minmax(0, 1fr) 52px; }
   .alert-item { grid-template-columns: auto minmax(0, 1fr); }

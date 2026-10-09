@@ -1862,6 +1862,9 @@ function renderMonthly() {
   const sbsdData = data.sbsd_share_analysis || {};
   const sbsdSpendRows = sbsdData.monthly_spend?.rows || [];
   const sbsdMonthLabel = sbsdData.month_label || currentMonthLabel;
+  const sbsdChartImage = sbsdMonthLabel === "9月" && /202609/.test(data.source || "")
+    ? "assets/sbsd-september-spend-2026.png"
+    : "";
   const sbsdCategoryRows = sbsdSpendRows.filter((row) => !["总计", "总和"].includes(row.品类));
   const sbsdTotalSpend = sum(sbsdCategoryRows, "求和:花费");
   const configs = monthlyFilterConfig(data);
@@ -2020,17 +2023,27 @@ function renderMonthly() {
       ${tableMarkup("monthly-owner-table", ownerRows, ownerColumns, 30)}
     </section>
     <section class="dashboard-section" id="monthly-sbsd-share">
-      ${sectionHead(`${sbsdMonthLabel} SB/SD 广告花费占比分析`, "按品类汇总；ACoS按总花费 / 总广告销售额计算，右侧占比图与左侧数据同源。", `数据源：${sbsdData.source || "SB/SD月度汇总"}`)}
+      ${sectionHead(`${sbsdMonthLabel} SB/SD 广告花费占比分析`, sbsdChartImage ? "左侧按品类汇总并计算加权 ACoS；右侧展示9月品类花费占比源图。" : "按品类汇总；ACoS按总花费 / 总广告销售额计算，右侧占比图与左侧数据同源。", `数据源：${sbsdData.source || "SB/SD月度汇总"}`)}
       <div class="sbsd-analysis-grid sbsd-analysis-grid--monthly">
         <div class="chart-panel">
           <div class="chart-title-row"><div><h4>${escapeHtml(sbsdData.monthly_spend?.title || `${sbsdMonthLabel}SDSB花费情况`)}</h4><p>${sbsdCategoryRows.length} 个品类，包含总计；花费 ${formatCurrency(sbsdTotalSpend)}</p></div></div>
           ${tableMarkup("sbsd-monthly-table", sbsdSpendRows, sbsdSpendColumns, 30)}
         </div>
-        <div class="chart-panel sbsd-chart-panel">
-          <div class="chart-title-row"><div><h4>${escapeHtml(sbsdMonthLabel)}SDSB花费占比</h4><p>按整月SB/SD花费计算，与汇总表同步更新</p></div></div>
-          <div class="sbsd-chart-frame">
-            ${horizontalBarChart(sbsdCategoryRows.map((row) => ({ label: row.品类, value: safeDivide(asNumber(row["求和:花费"]), sbsdTotalSpend) })), { formatter: (v) => formatPercent(v, true) })}
+        <div class="chart-panel sbsd-chart-panel${sbsdChartImage ? " sbsd-chart-panel--image" : ""}">
+          <div class="chart-title-row">
+            <div><h4>${escapeHtml(sbsdMonthLabel)}品类花费占比</h4><p>${sbsdChartImage ? "2026年9月 · SB / SD 广告" : "按整月SB/SD花费计算，与汇总表同步更新"}</p></div>
+            ${sbsdChartImage ? `<a class="sbsd-image-link" href="${sbsdChartImage}" target="_blank" rel="noopener noreferrer" aria-label="在新标签页查看9月SB/SD花费占比原图">查看原图 <span aria-hidden="true">↗</span></a>` : ""}
           </div>
+          ${sbsdChartImage ? `
+            <figure class="sbsd-source-figure">
+              <a class="sbsd-source-image-link" href="${sbsdChartImage}" target="_blank" rel="noopener noreferrer" aria-label="打开完整的2026年9月SBSD各品类花费占比图">
+                <img class="sbsd-source-chart" src="${sbsdChartImage}" alt="2026年9月SBSD各品类花费占比饼图，包含品类名称与占比标注" width="1178" height="872" loading="lazy" decoding="async">
+              </a>
+              <figcaption>源图等比例展示，点击图片可查看高清标注</figcaption>
+            </figure>` : `
+            <div class="sbsd-chart-frame">
+              ${horizontalBarChart(sbsdCategoryRows.map((row) => ({ label: row.品类, value: safeDivide(asNumber(row["求和:花费"]), sbsdTotalSpend) })), { formatter: (v) => formatPercent(v, true) })}
+            </div>`}
         </div>
       </div>
     </section>
