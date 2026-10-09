@@ -1680,7 +1680,7 @@ function tagMarkup(value) {
   return `<span class="tag ${className}">${escapeHtml(text)}</span>`;
 }
 
-function tableMarkup(id, rows, columns, pageSize = 50) {
+function tableMarkup(id, rows, columns, pageSize = 50, rowClass = null) {
   if (!rows.length) return `<div class="table-shell">${emptyState()}</div>`;
   const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
   const currentPage = Math.min(state.pagination[id] || 1, totalPages);
@@ -1688,7 +1688,7 @@ function tableMarkup(id, rows, columns, pageSize = 50) {
   const start = (currentPage - 1) * pageSize;
   const pageRows = rows.slice(start, start + pageSize);
   const head = columns.map((column) => `<th class="${column.numeric ? "cell-number" : ""}">${escapeHtml(column.label)}</th>`).join("");
-  const body = pageRows.map((row) => `<tr>${columns.map((column) => {
+  const body = pageRows.map((row) => `<tr${rowClass ? ` class="${escapeHtml(rowClass(row))}"` : ""}>${columns.map((column) => {
     let content;
     if (column.render) content = column.render(row[column.field], row);
     else content = escapeHtml(row[column.field] ?? "-");
@@ -2027,7 +2027,7 @@ function renderMonthly() {
       <div class="sbsd-analysis-grid sbsd-analysis-grid--monthly">
         <div class="chart-panel">
           <div class="chart-title-row"><div><h4>${escapeHtml(sbsdData.monthly_spend?.title || `${sbsdMonthLabel}SDSB花费情况`)}</h4><p>${sbsdCategoryRows.length} 个品类，包含总计；花费 ${formatCurrency(sbsdTotalSpend)}</p></div></div>
-          ${tableMarkup("sbsd-monthly-table", sbsdSpendRows, sbsdSpendColumns, 30)}
+          ${tableMarkup("sbsd-monthly-table", sbsdSpendRows, sbsdSpendColumns, 12, (row) => ["总计", "总和"].includes(row.品类) ? "sbsd-total-row" : "")}
         </div>
         <div class="chart-panel sbsd-chart-panel${sbsdChartImage ? " sbsd-chart-panel--image" : ""}">
           <div class="chart-title-row">

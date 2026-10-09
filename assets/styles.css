@@ -1724,7 +1724,7 @@ button {
 }
 
 #sbsd-august-table .data-table tbody tr:last-child,
-[data-table-id="sbsd-monthly-table"] .data-table tbody tr:last-child {
+[data-table-id="sbsd-monthly-table"] .data-table tbody tr.sbsd-total-row {
   font-weight: 700;
   background: #e8eefc;
 }
