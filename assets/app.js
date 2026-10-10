@@ -1,6 +1,13 @@
 "use strict";
 
 const DATA_URL = window.DASHBOARD_DATA_URL || "data/sales_ads_dashboard_data.json";
+const MANIFEST_URL = window.DASHBOARD_MANIFEST_URL || "";
+let dashboardManifest = null;
+const moduleRequests = new Map();
+const lazyActions = {
+  main: { active: false, index: null, chunks: new Map(), pending: null, error: "" },
+  special: { active: false, index: null, chunks: new Map(), pending: null, error: "" },
+};
 const WEEKLY_DATA_URL = window.WEEKLY_REPORT_DATA_URL || "亚马逊周报月报/output/latest.json";
 
 const PAGE_CONFIG = {
@@ -1508,8 +1515,8 @@ function verticalCompareChart(rows, options = {}) {
     return `
       <div class="vertical-group">
         <div class="vertical-bars">
-          ${previousVisible ? `<div class="vertical-bar ${previousLabelClass}" style="height:${Math.max(2, Math.abs(previous) / scaleMax * 100)}%"><span>${formatter(previous)}</span></div>` : ""}
-          ${currentVisible ? `<div class="vertical-bar is-current ${currentLabelClass}" style="height:${Math.max(2, Math.abs(current) / scaleMax * 100)}%"><span>${formatter(current)}</span></div>` : ""}
+          ${previousVisible && (!options.hideMissing || row.previous != null) ? `<div class="vertical-bar ${previousLabelClass}" style="height:${Math.max(2, Math.abs(previous) / scaleMax * 100)}%"><span>${formatter(previous)}</span></div>` : ""}
+          ${currentVisible && (!options.hideMissing || row.current != null) ? `<div class="vertical-bar is-current ${currentLabelClass}" style="height:${Math.max(2, Math.abs(current) / scaleMax * 100)}%"><span>${formatter(current)}</span></div>` : ""}
         </div>
         <div class="vertical-group__label" title="${escapeHtml(row.label)}">${escapeHtml(row.label)}</div>
       </div>`;
@@ -1679,13 +1686,14 @@ function tagMarkup(value) {
   return `<span class="tag ${className}">${escapeHtml(text)}</span>`;
 }
 
-function tableMarkup(id, rows, columns, pageSize = 50, rowClass = null, footerRows = []) {
+function tableMarkup(id, rows, columns, pageSize = 50, rowClass = null, footerRows = [], pageModel = null) {
   if (!rows.length && !footerRows.length) return `<div class="table-shell">${emptyState()}</div>`;
-  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  const totalRows = pageModel?.total ?? rows.length;
+  const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
   const currentPage = Math.min(state.pagination[id] || 1, totalPages);
   state.pagination[id] = currentPage;
   const start = (currentPage - 1) * pageSize;
-  const pageRows = rows.slice(start, start + pageSize);
+  const pageRows = pageModel ? rows : rows.slice(start, start + pageSize);
   const head = columns.map((column) => `<th class="${column.numeric ? "cell-number" : ""}">${escapeHtml(column.label)}</th>`).join("");
   const renderRow = (row) => `<tr${rowClass ? ` class="${escapeHtml(rowClass(row))}"` : ""}>${columns.map((column) => {
     let content;
@@ -1710,7 +1718,7 @@ function tableMarkup(id, rows, columns, pageSize = 50, rowClass = null, footerRo
         </table>
       </div>
       <div class="table-footer">
-        <span>共 ${formatNumber(rows.length, 0)} 条，第 ${currentPage} / ${totalPages} 页</span>
+        <span>共 ${formatNumber(totalRows, 0)} 条，第 ${currentPage} / ${totalPages} 页</span>
         <div class="pagination">
           <button type="button" class="page-button" data-page-action="prev" ${currentPage <= 1 ? "disabled" : ""}>上一页</button>
           <button type="button" class="page-button" data-page-action="next" ${currentPage >= totalPages ? "disabled" : ""}>下一页</button>
@@ -1900,9 +1908,9 @@ function renderMonthly() {
 
   const sortedBySpend = [...categoryRows].sort((a, b) => b.本月花费 - a.本月花费);
   const topCategories = sortedBySpend.slice(0, 15);
-  const salesCategories = [...categoryRows].sort((a, b) => b.本月销售额 - a.本月销售额).slice(0, 15);
+  const salesCategories = [...categoryRows].sort((a, b) => b.本月销售额 - a.本月销售额);
   const totalCategorySpend = sum(categoryRows, "本月花费");
-  const spendChart = verticalCompareChart(topCategories.map((row) => ({ label: row.品类, previous: row.上月花费, current: row.本月花费 })), {
+  const spendChart = verticalCompareChart(sortedBySpend.map((row) => ({ label: row.品类, previous: row.上月花费, current: row.本月花费 })), {
     formatter: (v) => formatCurrency(v, true),
     axisFormatter: (v) => formatCurrency(v, true),
     className: "vertical-chart--category",
@@ -1926,13 +1934,13 @@ function renderMonthly() {
     categoryTitle = "品类广告销售额对比";
     categoryChart = salesChart;
   } else if (state.ui.monthlyCategoryTab === "share") {
-    categoryTitle = "本月品类花费占比";
+    categoryTitle = "花费占比（TOP15）";
     categoryChart = shareChart;
   } else {
     categoryChart = `<div class="category-chart-stack">
       <div class="category-chart-block"><h4>花费对比</h4>${spendChart}</div>
       <div class="category-chart-block"><h4>销售额对比</h4>${salesChart}</div>
-      <div class="category-chart-block"><h4>花费占比</h4>${shareChart}</div>
+      <div class="category-chart-block"><h4>花费占比（TOP15）</h4>${shareChart}</div>
     </div>`;
   }
 
@@ -1999,7 +2007,7 @@ function renderMonthly() {
       ${sectionHead("品类视角", "查看重点品类的花费、销售额、花费占比和 ACoS 变化。", `${categoryRows.length} 个品类`)}
       <div class="chart-title-row">
         <div><h4>${escapeHtml(categoryTitle)}</h4></div>
-        ${segmentControl("monthly-category", [["all", "全部"], ["spend", "花费对比"], ["sales", "销售额对比"], ["share", "花费占比"]], state.ui.monthlyCategoryTab)}
+        ${segmentControl("monthly-category", [["all", "全部"], ["spend", "花费对比"], ["sales", "销售额对比"], ["share", "花费占比（TOP15）"]], state.ui.monthlyCategoryTab)}
       </div>
       <div class="chart-panel chart-panel--full">${categoryChart}</div>
       <div style="height:14px"></div>
@@ -2374,7 +2382,8 @@ function filteredSpecialRows(data) {
 }
 
 function filteredSpecialActionRows(data) {
-  return (data.action_detail.special_rows || []).filter((row) => rowMatches("lingxing_special", row, {
+  return (data.action_detail.special_rows || []).filter((row) => rowMatches("lingxing_special", { ...row, 筛选月份: `${Number(String(row.月份).slice(5, 7))}月` }, {
+    month: "筛选月份",
     category: "品类",
     owner: "运营组长",
     rule: "规则类别",
@@ -2403,6 +2412,85 @@ function filteredRuleQueryRows(data) {
   })).sort((a, b) => String(a.品类).localeCompare(String(b.品类), "zh-CN")
     || String(a.广告类型).localeCompare(String(b.广告类型), "zh-CN")
     || String(a.规则组类别).localeCompare(String(b.规则组类别), "zh-CN"));
+}
+
+function dashboardFileUrl(path) {
+  return new URL(path, new URL(MANIFEST_URL, window.location.href)).href;
+}
+
+async function fetchDashboardFile(path) {
+  const response = await fetch(dashboardFileUrl(path), { cache: "force-cache" });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+
+async function ensureDashboardModule(page) {
+  if (state.data?.[page]) return;
+  if (!dashboardManifest?.modules[page]) throw new Error("找不到当前板块数据");
+  if (!moduleRequests.has(page)) {
+    moduleRequests.set(page, fetchDashboardFile(dashboardManifest.modules[page])
+      .then((data) => { state.data[page] = data; })
+      .finally(() => { moduleRequests.delete(page); }));
+  }
+  await moduleRequests.get(page);
+}
+
+function lazyActionNotice(kind, message, retry = false) {
+  return `<div class="method-note"><p>${escapeHtml(message)}</p><button class="button" type="button" data-load-rule-details="${kind}">${retry ? "重试加载" : "加载本页明细"}</button></div>`;
+}
+
+function refreshLazyActions() {
+  if (state.page !== "lingxing_rules") return;
+  const top = window.scrollY;
+  renderCurrentPage();
+  window.scrollTo({ top, behavior: "auto" });
+}
+
+async function activateLazyActions(kind) {
+  const lazy = lazyActions[kind];
+  const spec = state.data?.lingxing_rules?.lazy_details?.[kind];
+  if (!spec || lazy.pending) return;
+  lazy.active = true;
+  lazy.error = "";
+  if (!lazy.index) {
+    lazy.pending = fetchDashboardFile(spec.index).then((index) => {
+      lazy.index = index;
+      const rows = index.rows.map((values, ordinal) => ({
+        ...Object.fromEntries(index.fields.map((field, i) => [field, index.dictionaries ? index.dictionaries[i][values[i]] : values[i]])),
+        __ordinal: ordinal,
+      }));
+      state.data.lingxing_rules.action_detail[kind === "main" ? "rows" : "special_rows"] = rows;
+    }).catch((error) => { lazy.error = `明细索引加载失败：${error.message}`; })
+      .finally(() => { lazy.pending = null; refreshLazyActions(); });
+    refreshLazyActions();
+    await lazy.pending;
+  } else refreshLazyActions();
+}
+
+function lazyActionTable(kind, id, rows, columns, pageSize) {
+  if (!state.data.lingxing_rules.lazy_details) return tableMarkup(id, rows, columns, pageSize);
+  const lazy = lazyActions[kind];
+  if (lazy.error) return lazyActionNotice(kind, lazy.error, true);
+  if (!lazy.active) return lazyActionNotice(kind, "点击后加载筛选索引和当前页明细；翻页时按需读取，不一次下载全部动作记录。");
+  if (!lazy.index) return '<div class="method-note">正在读取明细筛选索引…</div>';
+  if (!rows.length) return tableMarkup(id, [], columns, pageSize);
+  const pages = Math.ceil(rows.length / pageSize);
+  const page = Math.min(state.pagination[id] || 1, pages);
+  state.pagination[id] = page;
+  const pageRows = rows.slice((page - 1) * pageSize, page * pageSize);
+  const chunkIds = [...new Set(pageRows.map((row) => Math.floor(row.__ordinal / lazy.index.chunk_size)))];
+  const missing = chunkIds.filter((i) => !lazy.chunks.has(i));
+  if (missing.length) {
+    if (!lazy.pending) {
+      lazy.pending = Promise.all(missing.map(async (i) => {
+        lazy.chunks.set(i, await fetchDashboardFile(lazy.index.chunks[i]));
+      })).catch((error) => { lazy.error = `本页明细加载失败：${error.message}`; })
+        .finally(() => { lazy.pending = null; refreshLazyActions(); });
+    }
+    return `<div class="method-note">共 ${formatNumber(rows.length, 0)} 条，第 ${page} / ${pages} 页 · 正在加载本页明细…</div>`;
+  }
+  const nativeRows = pageRows.map((row) => lazy.chunks.get(Math.floor(row.__ordinal / lazy.index.chunk_size))[row.__ordinal % lazy.index.chunk_size]);
+  return tableMarkup(id, nativeRows, columns, pageSize, null, [], { total: rows.length });
 }
 
 function renderLingxing() {
@@ -2571,7 +2659,7 @@ function renderLingxing() {
       </div>
       <div class="chart-panel chart-panel--full">
           <div class="chart-title-row"><div><h4>专项规则动作明细</h4><p>来货自动重开包含来货自动打开、来货自动重开、来货重开及其他暂停→启用记录</p></div></div>
-          ${tableMarkup("lingxing-special-table", specialActionRows, [
+          ${lazyActionTable("special", "lingxing-special-table", specialActionRows, [
             { field: "月份", label: "月份" },
             { field: "触发日期", label: "触发日期" },
             { field: "店铺", label: "店铺" },
@@ -2588,19 +2676,19 @@ function renderLingxing() {
       </div>
     </section>
     <section class="dashboard-section" id="rule-action-detail">
-      ${sectionHead("规则动作明细", "展示产品(ASIN)暂停、关键词/PAT暂停和否词触发记录；来货自动重开在专项规则视图中单独展示。", `${detailRows.length} 条`)}
+      ${sectionHead("规则动作明细", "展示产品(ASIN)暂停、关键词/PAT暂停和否词触发记录；来货自动重开在专项规则视图中单独展示。", lazyActions.main.index || !data.lazy_details ? `${detailRows.length} 条` : "明细按需加载")}
       ${detailFilterMarkup("lingxing_rules_detail", {
         options: ["关键词/PAT暂停", "产品(ASIN)暂停", "否词"],
         searchLabel: "动作明细关键词",
         placeholder: "搜索广告活动名称或标签关键词",
       })}
-      <div class="detail-summary-grid">
+      ${!data.lazy_details || lazyActions.main.index ? `<div class="detail-summary-grid">
         ${detailMetricCard("广告活动数量", detailSummary.campaigns, "integer", "广告活动去重计数")}
         ${detailMetricCard("花费", detailSummary.spend, "currency")}
         ${detailMetricCard("订单", detailSummary.orders, "integer")}
         ${detailMetricCard("销售额", detailSummary.sales, "currency")}
-      </div>
-      ${tableMarkup("lingxing-detail-table", detailRows, detailColumns, 7)}
+      </div>` : ""}
+      ${lazyActionTable("main", "lingxing-detail-table", detailRows, detailColumns, 7)}
       <div class="method-note">花费、订单与销售额为当前筛选触发记录的取数窗口字段汇总，不等同整月广告表现。来货自动重开和低库存产品暂停已移至专项规则视图。</div>
     </section>
     `;
@@ -2765,7 +2853,6 @@ function renderBatch() {
   const teamSet = teamConfig ? selectedSet("batch_launch", "team") : null;
   const ownerSet = selectedSet("batch_launch", "owner");
   const selectedMonths = [...monthSet].sort((a, b) => Number(a) - Number(b));
-  const periodLabel = selectedMonths.join("+");
   const comparisonLabel = batchComparisonLabel(selectedMonths);
   const categoryAllSelected = isAllSelected("batch_launch", configs.find((config) => config.id === "category"));
   const crossRows = (data.summary_cross || []).filter((row) => monthSet.has(String(row.月份))
@@ -2781,13 +2868,13 @@ function renderBatch() {
     .filter((row) => row.批量广告花费 > 0)
     .map((row) => `${row.月份}::${row.维度}`));
   const eligibleCrossRows = crossRows.filter((row) => eligibleCategoryMonths.has(`${row.月份}::${row.品类}`));
-  const categoryRows = batchRowsByDimension(eligibleCrossRows, "品类", { combineMonths: true, periodLabel });
+  const categoryRows = batchRowsByDimension(eligibleCrossRows, "品类");
   const teamRows = batchRowsByDimension(
     eligibleCrossRows,
     "团队",
-    { combineMonths: true, periodLabel },
+    {},
   ).filter((row) => row.批量广告花费 > 0);
-  const ownerRows = batchRowsByDimension(eligibleCrossRows, "品类负责人", { combineMonths: true, periodLabel }).filter((row) => row.批量广告花费 > 0);
+  const ownerRows = batchRowsByDimension(eligibleCrossRows, "品类负责人").filter((row) => row.批量广告花费 > 0);
   const latestMonth = selectedMonths.at(-1);
   const previousMonth = selectedMonths.length > 1 ? selectedMonths.at(-2) : null;
   const currentRows = monthlyCategoryRows.filter((row) => String(row.月份) === latestMonth && row.批量广告花费 > 0);
@@ -2799,10 +2886,14 @@ function renderBatch() {
   const previous = previousFinancial && previousActivity
     ? { ...previousFinancial, batchCount: previousActivity.batchCount, allCount: previousActivity.allCount, coverage: previousActivity.coverage }
     : previousFinancial;
-  const coverageRows = batchRowsByDimension(activityCrossRows, "品类", { combineMonths: true, periodLabel })
-    .filter((row) => row.全部活动数量 > 0)
-    .sort((a, b) => b.活动覆盖率 - a.活动覆盖率);
-  const coverageMax = niceFractionMax(coverageRows.map((row) => row.活动覆盖率));
+  const monthlyCoverage = batchRowsByDimension(activityCrossRows, "品类").filter((row) => row.全部活动数量 > 0);
+  const coverageRows = unique(monthlyCoverage.map((row) => row.维度)).map((category) => {
+    const records = monthlyCoverage.filter((row) => row.维度 === category);
+    return { label: category,
+      previous: records.find((row) => String(row.月份) === previousMonth)?.活动覆盖率 ?? null,
+      current: records.find((row) => String(row.月份) === latestMonth)?.活动覆盖率 ?? null };
+  }).sort((a, b) => (b.current ?? b.previous ?? 0) - (a.current ?? a.previous ?? 0));
+  const coverageMax = niceFractionMax(monthlyCoverage.map((row) => row.活动覆盖率));
   const lowEfficiencyRows = currentRows
     .map((row) => {
       const acosGap = asNumber(row.批量ACOS) - asNumber(row.品类平均ACOS);
@@ -2868,7 +2959,7 @@ function renderBatch() {
 
   let summaryRows = categoryRows;
   let summaryColumns = [
-    { field: "月份", label: "所选月份", render: (v) => String(v).split("+").map(formatBatchMonthLabel).join(" + ") },
+    { field: "月份", label: "月份", render: (v) => escapeHtml(formatBatchMonthLabel(v)) },
     { field: "维度", label: "品类" },
     { field: "批量活动数量", label: "批量活动数量", numeric: true, render: (v) => formatNumber(v, 0) },
     { field: "全部活动数量", label: "整品类全部活动数量", numeric: true, render: (v) => formatNumber(v, 0) },
@@ -2893,7 +2984,7 @@ function renderBatch() {
     summaryRows = ownerRows;
     summaryColumns = summaryColumns.map((column) => column.field === "维度" ? { ...column, label: "负责人" } : column);
   }
-  summaryRows = [...summaryRows].sort((a, b) => b.批量活动数量 - a.批量活动数量);
+  summaryRows = [...summaryRows].sort((a, b) => String(a.维度).localeCompare(String(b.维度), "zh-CN") || String(a.月份).localeCompare(String(b.月份)));
 
   root.innerHTML = `
     ${introMarkup("批量投放系统运营看板", "查看批量活动创建规模、活动覆盖率及批量 ACoS 与品类平均的差异。", comparisonLabel)}
@@ -2914,7 +3005,7 @@ function renderBatch() {
       })}
       ${kpiCard({ label: "批量 ACoS", value: current.acos, previous: previous?.acos, valueType: "fractionPercent", tone: "red", inverse: true })}
     </div>
-    ${filterMarkup("batch_launch", configs, null, `${categoryRows.length} 个有批量花费的品类`)}
+    ${filterMarkup("batch_launch", configs, null, `${unique(categoryRows.map((row) => row.维度)).length} 个有批量花费的品类`)}
     <section class="dashboard-section" id="batch-scale">
       ${sectionHead("批量投放规模", "按月比较批量活动数量，不展示花费趋势。", selectedMonths.map(formatBatchMonthLabel).join(" vs "))}
       <div class="chart-panel chart-panel--full">
@@ -2922,9 +3013,10 @@ function renderBatch() {
       </div>
     </section>
     <section class="dashboard-section" id="batch-coverage">
-      ${sectionHead("活动覆盖率", "数量覆盖率 = 筛选出的批量活动数量 / 整品类全部活动数量（含批量和非批量）；同月同品类分母只计一次。", `${coverageRows.length} 个品类`)}
+      ${sectionHead("活动覆盖率", "各月份分别计算：筛选出的批量活动数量 / 当月整品类全部活动数量（含批量和非批量）；不合并或平均两个月覆盖率。", `${coverageRows.length} 个品类`)}
       <div class="chart-panel chart-panel--full">
-        ${verticalCompareChart(coverageRows.map((row) => ({ label: row.维度, previous: 0, current: row.活动覆盖率 })), { previousVisible: false, currentVisible: true, scaleMax: coverageMax, showYAxis: true, className: "vertical-chart--coverage", formatter: (v) => formatPercent(v, true), axisFormatter: (v) => formatPercent(v, true, 0) })}
+        ${previousMonth ? legendMarkup(formatBatchMonthLabel(previousMonth), formatBatchMonthLabel(latestMonth)) : `<div class="legend">${escapeHtml(formatBatchMonthLabel(latestMonth || "当前筛选"))}</div>`}
+        ${verticalCompareChart(coverageRows, { previousVisible: Boolean(previousMonth), currentVisible: true, hideMissing: true, staggerLabelsByValue: true, scaleMax: coverageMax, showYAxis: true, className: "vertical-chart--coverage", formatter: (v) => formatPercent(v, true), axisFormatter: (v) => formatPercent(v, true, 0) })}
       </div>
     </section>
     <section class="dashboard-section" id="batch-low-efficiency">
@@ -2945,7 +3037,7 @@ function renderBatch() {
       ${tableMarkup("batch-low-efficiency-table", lowEfficiencyRows, lowEfficiencyColumns, 20)}
     </section>
     <section class="dashboard-section" id="batch-summary">
-      ${sectionHead("批量投放汇总明细", "按所选月份合并汇总；无批量花费的品类不展示。", `${summaryRows.length} 条`)}
+      ${sectionHead("批量投放汇总明细", "所选月份分别展示，不跨月合并；无批量花费的品类不展示。", `${summaryRows.length} 条`)}
       <div class="chart-title-row">
         <div></div>
         ${segmentControl("batch-summary", [["category", "按品类"], ["team", "按团队"], ["owner", "按负责人"]], state.ui.batchSummaryTab)}
@@ -3013,8 +3105,17 @@ function renderCurrentPage() {
   document.querySelectorAll(".nav-button").forEach((button) => {
     button.classList.toggle("is-active", button.dataset.page === state.page);
   });
-  updateDataStatusForCurrentPage();
   renderSubnav();
+  if (!state.data?.[state.page] && state.page !== "weekly_review") {
+    loading.classList.remove("is-hidden");
+    root.innerHTML = "";
+    dataStatus.className = "data-status";
+    dataStatus.innerHTML = '<span class="status-dot"></span><span>正在读取当前板块</span>';
+    return;
+  }
+  loading.classList.add("is-hidden");
+  errorState.classList.add("is-hidden");
+  updateDataStatusForCurrentPage();
   if (state.page === "monthly_review") renderMonthly();
   if (state.page === "weekly_review") renderWeekly();
   if (state.page === "invalid_low_efficiency") renderInvalid();
@@ -3190,6 +3291,11 @@ function resetFilters(pageId) {
 }
 
 function handleRootClick(event) {
+  const lazyButton = event.target.closest("[data-load-rule-details]");
+  if (lazyButton) {
+    activateLazyActions(lazyButton.dataset.loadRuleDetails);
+    return;
+  }
   const reportFilterAction = event.target.closest("[data-report-filter-action]");
   if (reportFilterAction) {
     const report = ensureReportSelection().report;
@@ -3623,15 +3729,29 @@ async function loadData() {
         })
         .catch((error) => ({ data: null, error: error.message || "读取失败" }))
       : Promise.resolve({ data: null, error: "" });
-    const response = await fetch(DATA_URL, { cache: "no-store" });
+    const sectionId = window.location.hash.slice(1);
+    const routePage = Object.entries(PAGE_CONFIG).find(([, config]) => config.sections.some(([id]) => id === sectionId))?.[0];
+    if (routePage) state.page = routePage;
+    const response = await fetch(MANIFEST_URL || DATA_URL, { cache: "no-cache" });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    state.data = await response.json();
+    const data = await response.json();
+    if (MANIFEST_URL) {
+      if (data.schema_version !== 1) throw new Error("不支持的数据清单版本");
+      dashboardManifest = data;
+      state.data = { meta: data.meta };
+      Object.values(lazyActions).forEach((lazy) => Object.assign(lazy, { active: false, index: null, chunks: new Map(), pending: null, error: "" }));
+      await ensureDashboardModule(state.page);
+    } else state.data = data;
     const weeklyResult = await weeklyRequest;
     state.weeklyReport = weeklyResult.data;
     state.weeklyLoadError = weeklyResult.error;
     loading.classList.add("is-hidden");
     if (!usageTracking.pageId) startPageUsage(state.page);
     renderCurrentPage();
+    if (state.page === "lingxing_rules" && ["rule-action-detail", "special-monitor"].includes(sectionId)) {
+      activateLazyActions(sectionId === "rule-action-detail" ? "main" : "special");
+    }
+    if (sectionId) document.getElementById(sectionId)?.scrollIntoView({ block: "start" });
     trackDashboardPageView("initial_load");
     trackUsage("dashboard_data_load", {
       load_status: "success",
@@ -3641,7 +3761,7 @@ async function loadData() {
   } catch (error) {
     loading.classList.add("is-hidden");
     errorState.classList.remove("is-hidden");
-    document.getElementById("error-message").textContent = `无法读取 ${DATA_URL}。请通过 GitHub Pages 或本地 HTTP 服务打开页面。${error.message ? ` (${error.message})` : ""}`;
+    document.getElementById("error-message").textContent = `无法读取当前板块数据。请重试，或通过 GitHub Pages / 本地 HTTP 服务打开页面。${error.message ? ` (${error.message})` : ""}`;
     dataStatus.classList.add("is-error");
     dataStatus.innerHTML = '<span class="status-dot"></span><span>数据加载失败</span>';
     trackUsage("dashboard_data_load", {
@@ -3651,7 +3771,7 @@ async function loadData() {
   }
 }
 
-document.querySelector(".primary-nav").addEventListener("click", (event) => {
+document.querySelector(".primary-nav").addEventListener("click", async (event) => {
   const button = event.target.closest("[data-page]");
   if (!button || button.dataset.page === state.page || !state.data) return;
   const previousPage = state.page;
@@ -3659,7 +3779,19 @@ document.querySelector(".primary-nav").addEventListener("click", (event) => {
   flushUsageDurations("page_change");
   state.page = nextPage;
   startPageUsage(nextPage);
+  renderCurrentPage();
+  try {
+    if (dashboardManifest) await ensureDashboardModule(nextPage);
+    if (state.page !== nextPage) return;
+  } catch (error) {
+    if (state.page !== nextPage) return;
+    loading.classList.add("is-hidden");
+    errorState.classList.remove("is-hidden");
+    document.getElementById("error-message").textContent = `当前板块加载失败，请重试。${error.message}`;
+    return;
+  }
   syncSharedFiltersToDestination(state.page);
+  history.replaceState(null, "", `#${PAGE_CONFIG[nextPage].sections[0][0]}`);
   window.scrollTo({ top: 0, behavior: "auto" });
   renderCurrentPage();
   trackUsage("dashboard_navigation", {
@@ -3678,6 +3810,10 @@ subnav.addEventListener("click", (event) => {
   if (!link) return;
   const fromSection = usageTracking.sectionId;
   const targetSection = link.getAttribute("href").slice(1);
+  if (state.page === "lingxing_rules") {
+    if (targetSection === "rule-action-detail") activateLazyActions("main");
+    if (targetSection === "special-monitor") activateLazyActions("special");
+  }
   setActiveSubnav(targetSection, "secondary_navigation");
   trackUsage("dashboard_navigation", {
     navigation_level: "secondary",

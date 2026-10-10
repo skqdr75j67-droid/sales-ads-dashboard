@@ -7,7 +7,11 @@
 - 领星规则看板
 - 批量投放看板
 
-页面默认读取 `data/sales_ads_dashboard_data.json`。前端与数据处理脚本解耦，后续迁移公司内网或接入 API 时，只需修改 `assets/config.js` 中的数据地址。
+页面先读取 `data/dashboard_manifest.json`，仅下载当前板块的数据；切换板块时再下载并缓存。原 `data/sales_ads_dashboard_data.json` 保留为数据生成基准和兼容输入，不在首屏下载。前端与数据处理脚本解耦。
+
+规则动作明细点击后才下载轻量筛选索引及当前页所在小批记录（普通动作每批70条、专项每批100条）；翻页跨批次才追加读取，已读批次复用。筛选统计基于全部索引，不按单页计算。库存条件暂停、来货自动重开仍在专项。
+
+批量覆盖率柱状图、汇总明细按月份分别展示，不合并两个月的比例；品类、团队、负责人视角均保留月份。月度复盘的花费和销售额柱状图展示全部品类，横向滚动；花费占比横向图保留 TOP15。
 
 领星规则沿用统一清洗CSV生成的触发监控、专项和动作明细，不计算理论节费或规则有效性；库存条件暂停、来货自动重开进入专项，不混入普通暂停。8901 的逐条触发CSV与后续服务器分析流程独立，本项目不取领星日报。
 
@@ -40,13 +44,19 @@ cd ~/Desktop/Codex销售中台输入文件
 python3 build_sales_ads_dashboard_data.py --refresh-lingxing --copy-module-json
 ```
 
-然后用新生成的文件覆盖：
+本机统一生成脚本已接入按需数据拆分。发布总JSON后，还需同步 `前端数据/dashboard_manifest.json` 与 `前端数据/dashboard/` 到仓库 `data/`。也可在本仓库手动生成：
+
+```bash
+python3 scripts/split_dashboard_data.py --input data/sales_ads_dashboard_data.json --output-dir data
+```
+
+基准数据文件：
 
 ```text
 data/sales_ads_dashboard_data.json
 ```
 
-本机生成结果位于输入文件夹的 `前端数据/`。`--refresh-lingxing` 将规则处理目录里已准备好的两份规则JSON合并进总JSON；不传此选项会保留旧总JSON里的规则部分。发布时只同步网页资源和总JSON，不上传原始Excel、触发CSV、cURL或凭据。桌面预览的 `assets/config.js` 使用 `前端数据/`，GitHub Pages 使用 `data/`，不要互相覆盖。
+本机生成结果位于输入文件夹的 `前端数据/`。`--refresh-lingxing` 将规则处理目录里已准备好的两份规则JSON合并进总JSON；不传此选项会保留旧总JSON里的规则部分。发布时只同步网页资源、生成脚本、总JSON及其派生按需数据，不上传原始Excel、触发CSV、cURL或凭据。按需数据路径包含源JSON的SHA版本，清单重新校验、版本文件复用缓存。桌面预览的 `assets/config.js` 使用 `前端数据/`，GitHub Pages 使用 `data/`，不要互相覆盖。
 
 ## GitHub Pages
 
@@ -64,6 +74,7 @@ Settings -> Pages -> Deploy from a branch -> main / root
 
 ```js
 window.DASHBOARD_DATA_URL = "/api/sales-ads-dashboard";
+window.DASHBOARD_MANIFEST_URL = ""; // 关闭文件清单模式，读取完整兼容API
 ```
 
 接口返回结构保持与当前统一 JSON 一致，页面代码无需改动。

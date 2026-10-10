@@ -2023,7 +2023,16 @@ button {
 }
 
 .vertical-chart--coverage .vertical-bars {
-  padding: 0 24px;
+  padding: 0 12px;
+  gap: 8px;
+}
+
+.vertical-chart--coverage .vertical-bar span {
+  top: -22px;
+}
+
+.vertical-chart--coverage .vertical-bar.is-label-high span {
+  top: -38px;
 }
 
 .vertical-chart--coverage .vertical-group__label {
