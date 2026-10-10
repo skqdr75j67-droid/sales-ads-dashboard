@@ -3092,7 +3092,7 @@ function renderBatch() {
         ${segmentControl("batch-summary", [["category", "按品类"], ["team", "按团队"], ["owner", "按负责人"]], state.ui.batchSummaryTab)}
       </div>
       ${tableMarkup("batch-summary-table", summaryRows, summaryColumns, 10)}
-      <div class="method-note">覆盖率=整品类批量活动数量/整品类全部活动数量，不按负责人或团队缩小分子分母，同月同品类只计一次；团队和负责人视角对涉及品类去重后按活动数量加权计算。筛选批量活动数量、花费和销售额仍是所选负责人/团队的实际数据。花费占比、销售贡献率继续以整品类为分母，品类平均ACoS仍为整品类参考值。包含BS项目部及负责人韦全陶的数据。</div>
+      <div class="method-note">覆盖率=整品类批量活动数量/整品类全部活动数量；包含BS项目部及负责人韦全陶的数据。</div>
     </section>
     <section class="dashboard-section" id="batch-operation-detail">
       ${sectionHead("批量投放批次查询", "批量投放批次查询表只提供批次整体数据，运营可以筛选自己名下的批次号，使用批次号到领星平台筛选活动，查看单条活动详情", `${operationRows.length} 条`)}
