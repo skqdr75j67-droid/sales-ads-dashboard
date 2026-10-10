@@ -2785,11 +2785,12 @@ function operationRowMatches(row, filters) {
 }
 
 function batchAggregate(rows) {
-  // Whole-category bases repeat across owners; count each month/category once.
+  // Whole-category coverage counts and bases repeat across owners: count once.
   const denominators = new Map();
   rows.forEach((row, index) => denominators.set(row.denominator_key || `row::${index}`, row));
   const baseRows = [...denominators.values()];
   const batchCount = sum(rows, "批量活动数量");
+  const coverageBatchCount = baseRows.reduce((total, row) => total + asNumber(row.品类批量活动数量 ?? row.批量活动数量), 0);
   const allCount = sum(baseRows, "全部活动数量");
   const spend = sum(rows, "批量广告花费");
   const sales = sum(rows, "批量销售额");
@@ -2797,8 +2798,9 @@ function batchAggregate(rows) {
   const totalSales = sum(baseRows, "品类总销售额");
   return {
     batchCount,
+    coverageBatchCount,
     allCount,
-    coverage: safeDivide(batchCount, allCount),
+    coverage: safeDivide(coverageBatchCount, allCount),
     spend,
     sales,
     totalSpend,
@@ -2871,6 +2873,7 @@ function batchRowsByDimension(rows, dimensionField, options = {}) {
     return {
       ...dimensions,
       批量活动数量: aggregate.batchCount,
+      品类批量活动数量: aggregate.coverageBatchCount,
       全部活动数量: aggregate.allCount,
       批量广告花费: aggregate.spend,
       批量销售额: aggregate.sales,
@@ -3006,9 +3009,10 @@ function renderBatch() {
   let summaryColumns = [
     { field: "月份", label: "月份", render: (v) => escapeHtml(formatBatchMonthLabel(v)) },
     { field: "维度", label: "品类" },
-    { field: "批量活动数量", label: "批量活动数量", numeric: true, render: (v) => formatNumber(v, 0) },
+    { field: "批量活动数量", label: "筛选批量活动数量", numeric: true, render: (v) => formatNumber(v, 0) },
+    { field: "品类批量活动数量", label: "整品类批量活动数量", numeric: true, render: (v) => formatNumber(v, 0) },
     { field: "全部活动数量", label: "整品类全部活动数量", numeric: true, render: (v) => formatNumber(v, 0) },
-    { field: "活动覆盖率", label: "对整品类的活动覆盖率", numeric: true, render: (v) => formatPercent(v, true) },
+    { field: "活动覆盖率", label: "整品类活动覆盖率", numeric: true, render: (v) => formatPercent(v, true) },
     { field: "批量广告花费", label: "批量广告花费", numeric: true, render: (v) => formatCurrency(v) },
     { field: "批量活动花费占比", label: "批量活动花费占比", numeric: true, render: (v) => v === null ? "-" : formatPercent(v, true) },
     { field: "批量ACOS", label: "批量 ACoS", numeric: true, render: (v) => v === null || asNumber(v) <= 0 ? "-" : formatPercent(v, true) },
@@ -3035,7 +3039,7 @@ function renderBatch() {
     ${introMarkup("批量投放系统运营看板", "查看批量活动创建规模、活动覆盖率及批量 ACoS 与品类平均的差异。", comparisonLabel)}
     <div class="kpi-grid">
       ${kpiCard({ label: "批量广告活动数量", value: current.batchCount, previous: previous?.batchCount, valueType: "integer", tone: "primary", note: latestMonth ? `${String(latestMonth).slice(0, 4)}年${String(latestMonth).slice(4)}月` : "当前筛选" })}
-      ${kpiCard({ label: "对整品类的活动覆盖率", value: current.coverage, previous: previous?.coverage, valueType: "fractionPercent", tone: "teal", note: "筛选出的批量活动数 / 整品类全部活动数" })}
+      ${kpiCard({ label: "整品类活动覆盖率", value: current.coverage, previous: previous?.coverage, valueType: "fractionPercent", tone: "teal", note: "整品类批量活动数 / 整品类全部活动数" })}
       ${kpiCard({ label: "批量广告花费", value: current.spend, previous: previous?.spend, valueType: "currency", tone: "orange", inverse: true })}
       ${kpiCard({
         label: "批量活动花费占比",
@@ -3058,7 +3062,7 @@ function renderBatch() {
       </div>
     </section>
     <section class="dashboard-section" id="batch-coverage">
-      ${sectionHead("活动覆盖率", "各月份分别计算：筛选出的批量活动数量 / 当月整品类全部活动数量（含批量和非批量）；不合并或平均两个月覆盖率。", `${coverageRows.length} 个品类`)}
+      ${sectionHead("活动覆盖率", "各月份分别计算：当月整品类批量活动数量 / 整品类全部活动数量（含批量和非批量）。负责人、团队筛选只决定展示哪些品类，不改变各品类的覆盖率；不合并或平均两个月覆盖率。", `${coverageRows.length} 个品类`)}
       <div class="chart-panel chart-panel--full">
         ${previousMonth ? legendMarkup(formatBatchMonthLabel(previousMonth), formatBatchMonthLabel(latestMonth)) : `<div class="legend">${escapeHtml(formatBatchMonthLabel(latestMonth || "当前筛选"))}</div>`}
         ${verticalCompareChart(coverageRows, { previousVisible: Boolean(previousMonth), currentVisible: true, hideMissing: true, staggerLabelsByValue: true, scaleMax: coverageMax, showYAxis: true, className: "vertical-chart--coverage", formatter: (v) => formatPercent(v, true), axisFormatter: (v) => formatPercent(v, true, 0) })}
@@ -3088,7 +3092,7 @@ function renderBatch() {
         ${segmentControl("batch-summary", [["category", "按品类"], ["team", "按团队"], ["owner", "按负责人"]], state.ui.batchSummaryTab)}
       </div>
       ${tableMarkup("batch-summary-table", summaryRows, summaryColumns, 10)}
-      <div class="method-note">月份、负责人、品类与团队联动筛选批量数据；覆盖率、花费占比、销售贡献率统一以整品类为分母，同月同品类只计一次。品类平均ACoS为整品类参考值，不随负责人缩小范围。沿用源表汇总口径，批次查询的数量差异不作调整；包含BS项目部及负责人韦全陶的数据。</div>
+      <div class="method-note">覆盖率=整品类批量活动数量/整品类全部活动数量，不按负责人或团队缩小分子分母，同月同品类只计一次；团队和负责人视角对涉及品类去重后按活动数量加权计算。筛选批量活动数量、花费和销售额仍是所选负责人/团队的实际数据。花费占比、销售贡献率继续以整品类为分母，品类平均ACoS仍为整品类参考值。包含BS项目部及负责人韦全陶的数据。</div>
     </section>
     <section class="dashboard-section" id="batch-operation-detail">
       ${sectionHead("批量投放批次查询", "批量投放批次查询表只提供批次整体数据，运营可以筛选自己名下的批次号，使用批次号到领星平台筛选活动，查看单条活动详情", `${operationRows.length} 条`)}
