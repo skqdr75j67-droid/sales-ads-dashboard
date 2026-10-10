@@ -4,6 +4,7 @@ const DATA_URL = window.DASHBOARD_DATA_URL || "data/sales_ads_dashboard_data.jso
 const MANIFEST_URL = window.DASHBOARD_MANIFEST_URL || "";
 let dashboardManifest = null;
 const moduleRequests = new Map();
+const monthlyChartRequests = new Map();
 const lazyActions = {
   main: { active: false, index: null, chunks: new Map(), pending: null, error: "" },
   special: { active: false, index: null, chunks: new Map(), pending: null, error: "" },
@@ -1872,9 +1873,7 @@ function renderMonthly() {
   const sbsdData = data.sbsd_share_analysis || {};
   const sbsdSpendRows = sbsdData.monthly_spend?.rows || [];
   const sbsdMonthLabel = sbsdData.month_label || currentMonthLabel;
-  const sbsdChartImage = sbsdMonthLabel === "9月" && /202609/.test(data.source || "")
-    ? "assets/sbsd-september-spend-2026.png?v=20261009-refresh"
-    : "";
+  const sbsdChartImage = sbsdChartImageUrl(data);
   const sbsdCategoryRows = sbsdSpendRows.filter((row) => !["总计", "总和"].includes(row.品类));
   const sbsdTotalRows = sbsdSpendRows.filter((row) => ["总计", "总和"].includes(row.品类));
   const sbsdTotalSpend = sum(sbsdCategoryRows, "求和:花费");
@@ -2046,7 +2045,7 @@ function renderMonthly() {
           </div>
           ${sbsdChartImage ? `
             <figure class="sbsd-source-figure">
-              <img class="sbsd-source-chart" src="${sbsdChartImage}" alt="2026年9月SBSD各品类花费占比饼图，包含品类名称与占比标注" width="1350" height="878" loading="lazy" decoding="async">
+              <img class="sbsd-source-chart" src="${sbsdChartImage}" alt="2026年9月SBSD各品类花费占比饼图，包含品类名称与占比标注" width="1350" height="878" loading="eager" fetchpriority="high" decoding="async">
             </figure>` : `
             <div class="sbsd-chart-frame">
               ${horizontalBarChart(sbsdCategoryRows.map((row) => ({ label: row.品类, value: safeDivide(asNumber(row["求和:花费"]), sbsdTotalSpend) })), { formatter: (v) => formatPercent(v, true) })}
@@ -2433,6 +2432,52 @@ async function ensureDashboardModule(page) {
       .finally(() => { moduleRequests.delete(page); }));
   }
   await moduleRequests.get(page);
+}
+
+function sbsdChartImageUrl(data) {
+  const month = data?.sbsd_share_analysis?.month_label || data?.period?.current_month;
+  return month === "9月" && /202609/.test(data?.source || "")
+    ? "assets/sbsd-september-spend-2026.png?v=20261009-refresh"
+    : "";
+}
+
+async function ensurePageAssets(page) {
+  if (page !== "monthly_review") return;
+  const url = sbsdChartImageUrl(state.data?.monthly_review);
+  if (!url) return;
+  if (!monthlyChartRequests.has(url)) {
+    const entry = { ready: false, pending: null };
+    entry.pending = new Promise((resolve, reject) => {
+      const img = new Image();
+      img.fetchPriority = "high";
+      img.decoding = "async";
+      let settled = false;
+      const timer = window.setTimeout(() => finish(() => reject(new Error("9月SB/SD饼图加载超时，请重试"))), 30000);
+      const finish = (callback) => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timer);
+        img.onload = null;
+        img.onerror = null;
+        callback();
+      };
+      img.onload = async () => {
+        try {
+          if (typeof img.decode === "function") await img.decode();
+          finish(resolve);
+        } catch (error) {
+          finish(() => reject(new Error("9月SB/SD饼图解码失败，请重试")));
+        }
+      };
+      img.onerror = () => finish(() => reject(new Error("9月SB/SD饼图加载失败，请重试")));
+      img.src = url;
+    }).then(() => { entry.ready = true; }).catch((error) => {
+      monthlyChartRequests.delete(url);
+      throw error;
+    });
+    monthlyChartRequests.set(url, entry);
+  }
+  await monthlyChartRequests.get(url).pending;
 }
 
 function lazyActionNotice(kind, message, retry = false) {
@@ -3106,8 +3151,12 @@ function renderCurrentPage() {
     button.classList.toggle("is-active", button.dataset.page === state.page);
   });
   renderSubnav();
-  if (!state.data?.[state.page] && state.page !== "weekly_review") {
+  const chartUrl = state.page === "monthly_review" ? sbsdChartImageUrl(state.data?.monthly_review) : "";
+  const waitingForChart = Boolean(chartUrl && !monthlyChartRequests.get(chartUrl)?.ready);
+  if ((!state.data?.[state.page] && state.page !== "weekly_review") || waitingForChart) {
     loading.classList.remove("is-hidden");
+    loading.querySelector("p").textContent = waitingForChart ? "正在加载9月品类花费占比饼图…" : `正在加载${PAGE_CONFIG[state.page].title}…`;
+    errorState.classList.add("is-hidden");
     root.innerHTML = "";
     dataStatus.className = "data-status";
     dataStatus.innerHTML = '<span class="status-dot"></span><span>正在读取当前板块</span>';
@@ -3742,14 +3791,16 @@ async function loadData() {
       Object.values(lazyActions).forEach((lazy) => Object.assign(lazy, { active: false, index: null, chunks: new Map(), pending: null, error: "" }));
       await ensureDashboardModule(state.page);
     } else state.data = data;
+    await ensurePageAssets(state.page);
     const weeklyResult = await weeklyRequest;
     state.weeklyReport = weeklyResult.data;
     state.weeklyLoadError = weeklyResult.error;
     loading.classList.add("is-hidden");
     if (!usageTracking.pageId) startPageUsage(state.page);
     renderCurrentPage();
-    if (state.page === "lingxing_rules" && ["rule-action-detail", "special-monitor"].includes(sectionId)) {
-      activateLazyActions(sectionId === "rule-action-detail" ? "main" : "special");
+    if (state.page === "lingxing_rules") {
+      activateLazyActions("main");
+      if (sectionId === "special-monitor") activateLazyActions("special");
     }
     if (sectionId) document.getElementById(sectionId)?.scrollIntoView({ block: "start" });
     trackDashboardPageView("initial_load");
@@ -3782,6 +3833,7 @@ document.querySelector(".primary-nav").addEventListener("click", async (event) =
   renderCurrentPage();
   try {
     if (dashboardManifest) await ensureDashboardModule(nextPage);
+    await ensurePageAssets(nextPage);
     if (state.page !== nextPage) return;
   } catch (error) {
     if (state.page !== nextPage) return;
@@ -3794,6 +3846,7 @@ document.querySelector(".primary-nav").addEventListener("click", async (event) =
   history.replaceState(null, "", `#${PAGE_CONFIG[nextPage].sections[0][0]}`);
   window.scrollTo({ top: 0, behavior: "auto" });
   renderCurrentPage();
+  if (state.page === "lingxing_rules") activateLazyActions("main");
   trackUsage("dashboard_navigation", {
     navigation_level: "primary",
     from_page: previousPage,
