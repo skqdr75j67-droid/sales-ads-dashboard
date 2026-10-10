@@ -38,7 +38,6 @@ const PAGE_CONFIG = {
       ["batch-low-efficiency", "低效批量广告"],
       ["batch-summary", "批量投放汇总明细"],
       ["batch-operation-detail", "批量投放批次查询"],
-      ["batch-demand-stats", "上周需求统计"],
     ],
   },
 };
@@ -2959,18 +2958,6 @@ function renderBatch() {
       ${batchOperationFilterMarkup(operationConfigs, `${operationRows.length} 条批次`)}
       ${tableMarkup("batch-operation-table", operationRows, operationColumns, 50)}
       <div class="method-note">本查询表使用独立筛选器，不受页面上方批量投放数据筛选影响；上线天数筛选仅作用于本表，不影响上方图表和汇总明细。</div>
-    </section>
-    <section class="dashboard-section" id="batch-demand-stats">
-      ${sectionHead("上周需求统计", "内嵌钉钉需求统计仪表盘，用于查看批量投放需求收集与完成情况。", "钉钉在线看板")}
-      <div class="embed-panel">
-        <iframe
-          class="dingtalk-embed"
-          src="https://alidocs.dingtalk.com/notable/share/dashboard/128717d4c5c7fcffe422786e31991dc2_v9kqDejxQXkZ3OVx"
-          title="上周需求统计"
-          loading="lazy"
-          referrerpolicy="no-referrer-when-downgrade"
-        ></iframe>
-      </div>
     </section>`;
 }
 

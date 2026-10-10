@@ -1554,21 +1554,6 @@ button {
   outline-offset: 2px;
 }
 
-.embed-panel {
-  overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--surface-muted);
-}
-
-.dingtalk-embed {
-  display: block;
-  width: 100%;
-  min-height: 533px;
-  border: 0;
-  background: transparent;
-}
-
 .chart-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
