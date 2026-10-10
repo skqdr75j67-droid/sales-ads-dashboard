@@ -3043,7 +3043,7 @@ function renderBatch() {
         ${segmentControl("batch-summary", [["category", "按品类"], ["team", "按团队"], ["owner", "按负责人"]], state.ui.batchSummaryTab)}
       </div>
       ${tableMarkup("batch-summary-table", summaryRows, summaryColumns, 10)}
-      <div class="method-note">月份、负责人、品类与团队联动筛选批量数据；覆盖率、花费占比、销售贡献率统一以整品类为分母，同月同品类只计一次。品类平均ACoS为整品类参考值，不随负责人缩小范围。沿用源表汇总口径，批次查询的数量差异不作调整；BS项目部沿用原范围排除。</div>
+      <div class="method-note">月份、负责人、品类与团队联动筛选批量数据；覆盖率、花费占比、销售贡献率统一以整品类为分母，同月同品类只计一次。品类平均ACoS为整品类参考值，不随负责人缩小范围。沿用源表汇总口径，批次查询的数量差异不作调整；包含BS项目部及负责人韦全陶的数据。</div>
     </section>
     <section class="dashboard-section" id="batch-operation-detail">
       ${sectionHead("批量投放批次查询", "批量投放批次查询表只提供批次整体数据，运营可以筛选自己名下的批次号，使用批次号到领星平台筛选活动，查看单条活动详情", `${operationRows.length} 条`)}
