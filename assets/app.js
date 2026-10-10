@@ -43,7 +43,7 @@ const PAGE_CONFIG = {
     sections: [
       ["batch-scale", "批量投放规模"],
       ["batch-coverage", "活动覆盖率"],
-      ["batch-low-efficiency", "低效批量广告"],
+      ["batch-low-efficiency", "批量低效品类"],
       ["batch-summary", "批量投放汇总明细"],
       ["batch-operation-detail", "批量投放批次查询"],
     ],
@@ -3069,7 +3069,7 @@ function renderBatch() {
       </div>
     </section>
     <section class="dashboard-section" id="batch-low-efficiency">
-      ${sectionHead("低效批量广告", "识别投入产出失衡且批量 ACoS 明显高于品类平均的品类，并给出对应处理方式。", `${lowEfficiencyRows.length} 个待处理品类`)}
+      ${sectionHead("批量低效品类", "识别投入产出失衡且批量 ACoS 明显高于品类平均的品类，并给出对应处理方式。", `${lowEfficiencyRows.length} 个待处理品类`)}
       <div class="batch-treatment-grid">
         <article class="batch-treatment-card is-danger">
           <div>${tagMarkup("严重异常")}</div>
