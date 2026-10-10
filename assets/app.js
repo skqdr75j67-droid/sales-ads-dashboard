@@ -3804,7 +3804,7 @@ async function loadData() {
     renderCurrentPage();
     if (state.page === "lingxing_rules") {
       activateLazyActions("main");
-      if (sectionId === "special-monitor") activateLazyActions("special");
+      activateLazyActions("special");
     }
     if (sectionId) document.getElementById(sectionId)?.scrollIntoView({ block: "start" });
     trackDashboardPageView("initial_load");
@@ -3850,7 +3850,10 @@ document.querySelector(".primary-nav").addEventListener("click", async (event) =
   history.replaceState(null, "", `#${PAGE_CONFIG[nextPage].sections[0][0]}`);
   window.scrollTo({ top: 0, behavior: "auto" });
   renderCurrentPage();
-  if (state.page === "lingxing_rules") activateLazyActions("main");
+  if (state.page === "lingxing_rules") {
+    activateLazyActions("main");
+    activateLazyActions("special");
+  }
   trackUsage("dashboard_navigation", {
     navigation_level: "primary",
     from_page: previousPage,
